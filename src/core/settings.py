@@ -105,6 +105,23 @@ class Settings(BaseSettings):
 
     # MCP Configuration
     GITHUB_PAT: SecretStr | None = None
+
+    # Elasticsearch legal document search
+    ELK_ENDPOINT: str | None = None
+    ELK_USERNAME: str | None = None
+    ELK_PASSWORD: SecretStr | None = None
+    ELK_DOCUMENT_INDEX: str | None = None
+
+    # Milvus legal semantic search
+    MILVUS_HOST: str | None = None
+    MILVUS_PORT: int | None = None
+    MILVUS_USER: str | None = None
+    MILVUS_PASSWORD: SecretStr | None = None
+    MILVUS_COLLECTION_TERM_CMC: str = "law_terms_CMC"
+    MILVUS_COLLECTION_TRICH_YEU_CMC: str = "law_title_CMC"
+    MILVUS_EMBEDDING_MODEL: str = "CATI-AI/Qwen3-Embedding-0.6B-vietnamese-legal-v2"
+    MILVUS_EMBEDDING_DEVICE: str = "cpu"
+    MILVUS_SEARCH_NPROBE: int = 16
     MCP_GITHUB_SERVER_URL: str = "https://api.githubcopilot.com/mcp/"
 
     LANGCHAIN_TRACING_V2: bool = False

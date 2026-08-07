@@ -6,7 +6,7 @@ from threading import Lock
 from typing import Any, Literal
 
 from langchain_core.tools import BaseTool, tool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from core import settings
 
@@ -15,6 +15,8 @@ _embedding_lock = Lock()
 
 class MilvusLegalSearchInput(BaseModel):
     """Common input for legal semantic search."""
+
+    model_config = ConfigDict(extra="forbid")
 
     query: str = Field(min_length=1, description="Nội dung pháp luật cần tìm theo ngữ nghĩa.")
     tinh_trang_hieu_luc: str | None = Field(
@@ -36,7 +38,11 @@ class MilvusLegalSearchInput(BaseModel):
 class LawTermSearchInput(MilvusLegalSearchInput):
     """Input for searching legal terms."""
 
-    doc_id: int | None = Field(default=None, description="Lọc theo ID văn bản.")
+
+class LawTermInDocumentSearchInput(MilvusLegalSearchInput):
+    """Input for searching legal terms inside a known candidate document."""
+
+    doc_id: int = Field(description="ID văn bản ứng viên đã tìm thấy ở bước trước.")
 
 
 class LawTitleSearchInput(MilvusLegalSearchInput):
@@ -123,7 +129,7 @@ def _build_filter(search_input: MilvusLegalSearchInput) -> str | None:
         if value:
             expressions.append(f'{field} == "{_escape_filter_value(value)}"')
 
-    if isinstance(search_input, LawTermSearchInput) and search_input.doc_id is not None:
+    if isinstance(search_input, LawTermInDocumentSearchInput):
         expressions.append(f"doc_id == {search_input.doc_id}")
     if isinstance(search_input, LawTitleSearchInput) and search_input.id_document is not None:
         expressions.append(f"id_document == {search_input.id_document}")
@@ -224,7 +230,6 @@ async def search_law_terms_func(
     co_quan_ban_hanh: str | None = None,
     loai_van_ban: str | None = None,
     so_hieu: str | None = None,
-    doc_id: int | None = None,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
     """Tìm định nghĩa thuật ngữ pháp luật theo ngữ nghĩa trong law_terms_CMC."""
@@ -234,7 +239,33 @@ async def search_law_terms_func(
         co_quan_ban_hanh=co_quan_ban_hanh,
         loai_van_ban=loai_van_ban,
         so_hieu=so_hieu,
+        limit=limit,
+    )
+    return await asyncio.to_thread(
+        _search_collection,
+        search_input,
+        settings.MILVUS_COLLECTION_TERM_CMC,
+        "term",
+    )
+
+
+async def search_law_terms_in_document_func(
+    query: str,
+    doc_id: int,
+    tinh_trang_hieu_luc: str | None = None,
+    co_quan_ban_hanh: str | None = None,
+    loai_van_ban: str | None = None,
+    so_hieu: str | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Tìm điều, khoản trong một văn bản ứng viên đã biết ID."""
+    search_input = LawTermInDocumentSearchInput(
+        query=query,
         doc_id=doc_id,
+        tinh_trang_hieu_luc=tinh_trang_hieu_luc,
+        co_quan_ban_hanh=co_quan_ban_hanh,
+        loai_van_ban=loai_van_ban,
+        so_hieu=so_hieu,
         limit=limit,
     )
     return await asyncio.to_thread(
@@ -274,6 +305,12 @@ async def search_law_titles_func(
 
 search_law_terms: BaseTool = tool(search_law_terms_func, args_schema=LawTermSearchInput)
 search_law_terms.name = "search_law_terms"
+
+search_law_terms_in_document: BaseTool = tool(
+    search_law_terms_in_document_func,
+    args_schema=LawTermInDocumentSearchInput,
+)
+search_law_terms_in_document.name = "search_law_terms_in_document"
 
 search_law_titles: BaseTool = tool(search_law_titles_func, args_schema=LawTitleSearchInput)
 search_law_titles.name = "search_law_titles"

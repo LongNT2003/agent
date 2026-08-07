@@ -11,6 +11,7 @@ from schema.models import (
     AnthropicModelName,
     AzureOpenAIModelName,
     FakeModelName,
+    GoogleModelName,
     OpenAIModelName,
     VertexAIModelName,
 )
@@ -57,6 +58,19 @@ def test_settings_with_anthropic_key():
         assert settings.ANTHROPIC_API_KEY == SecretStr("test_key")
         assert settings.DEFAULT_MODEL == AnthropicModelName.HAIKU_45
         assert settings.AVAILABLE_MODELS == set(AnthropicModelName)
+
+
+def test_settings_with_gemini_api_alias():
+    with patch.dict(
+        os.environ,
+        {"GEMINI_API": "test_key", "GEMINI_MODEL": "gemini-test"},
+        clear=True,
+    ):
+        settings = Settings(_env_file=None)
+        assert settings.GEMINI_API == SecretStr("test_key")
+        assert settings.GEMINI_MODEL == "gemini-test"
+        assert settings.DEFAULT_MODEL == GoogleModelName.GEMINI_36_FLASH
+        assert settings.AVAILABLE_MODELS == set(GoogleModelName)
 
 
 def test_settings_with_vertexai_credentials_file():

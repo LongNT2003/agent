@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: SecretStr | None = None
     ANTHROPIC_API_KEY: SecretStr | None = None
     GOOGLE_API_KEY: SecretStr | None = None
+    GEMINI_API: SecretStr | None = None
+    GEMINI_MODEL: str | None = None
     GOOGLE_APPLICATION_CREDENTIALS: SecretStr | None = None
     GROQ_API_KEY: SecretStr | None = None
     USE_AWS_BEDROCK: bool = False
@@ -122,6 +124,7 @@ class Settings(BaseSettings):
     MILVUS_EMBEDDING_MODEL: str = "CATI-AI/Qwen3-Embedding-0.6B-vietnamese-legal-v2"
     MILVUS_EMBEDDING_DEVICE: str = "cpu"
     MILVUS_SEARCH_NPROBE: int = 16
+    LEGAL_SEARCH_MAX_LOOPS: int = Field(default=3, ge=1, le=10)
     MCP_GITHUB_SERVER_URL: str = "https://api.githubcopilot.com/mcp/"
 
     LANGCHAIN_TRACING_V2: bool = False
@@ -175,7 +178,7 @@ class Settings(BaseSettings):
             Provider.OPENAI_COMPATIBLE: self.COMPATIBLE_BASE_URL and self.COMPATIBLE_MODEL,
             Provider.DEEPSEEK: self.DEEPSEEK_API_KEY,
             Provider.ANTHROPIC: self.ANTHROPIC_API_KEY,
-            Provider.GOOGLE: self.GOOGLE_API_KEY,
+            Provider.GOOGLE: self.GOOGLE_API_KEY or self.GEMINI_API,
             Provider.VERTEXAI: self.GOOGLE_APPLICATION_CREDENTIALS,
             Provider.GROQ: self.GROQ_API_KEY,
             Provider.AWS: self.USE_AWS_BEDROCK,

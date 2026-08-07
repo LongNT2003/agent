@@ -1,28 +1,44 @@
 from unittest.mock import Mock, patch
 
+import pytest
+from pydantic import ValidationError
+
 from tools.milvus_search import (
+    LawTermInDocumentSearchInput,
     LawTermSearchInput,
     LawTitleSearchInput,
     _build_filter,
     _format_search_results,
     _search_collection,
+    search_law_terms,
+    search_law_terms_in_document,
 )
 
 
-def test_build_filter_supports_metadata_and_document_id():
+def test_global_term_search_supports_metadata_but_not_document_id() -> None:
     search_input = LawTermSearchInput(
         query="người lao động",
         tinh_trang_hieu_luc="Còn hiệu lực",
-        so_hieu='45/2019/"QH14',
-        doc_id=123,
+        so_hieu="45/2019/QH14",
     )
 
     assert _build_filter(search_input) == (
-        'tinh_trang_hieu_luc == "Còn hiệu lực" and so_hieu == "45/2019/"QH14" and doc_id == 123'
+        'tinh_trang_hieu_luc == "Còn hiệu lực" and so_hieu == "45/2019/QH14"'
     )
+    assert "doc_id" not in search_law_terms.args
+
+    with pytest.raises(ValidationError):
+        LawTermSearchInput(query="người lao động", doc_id=123)
 
 
-def test_search_collection_uses_cosine_vector_search_and_filter():
+def test_document_term_search_requires_and_filters_document_id() -> None:
+    search_input = LawTermInDocumentSearchInput(query="người lao động", doc_id=123)
+
+    assert _build_filter(search_input) == "doc_id == 123"
+    assert "default" not in search_law_terms_in_document.args["doc_id"]
+
+
+def test_search_collection_uses_cosine_vector_search_and_filter() -> None:
     client = Mock()
     client.search.return_value = [[]]
     search_input = LawTitleSearchInput(query="thuế thu nhập", id_document=456, limit=5)
@@ -45,7 +61,7 @@ def test_search_collection_uses_cosine_vector_search_and_filter():
     assert kwargs["limit"] == 5
 
 
-def test_format_term_results_returns_content_metadata_and_score():
+def test_format_term_results_returns_content_metadata_and_score() -> None:
     values = {
         "term_id": "term-1",
         "doc_id": 99,

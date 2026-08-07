@@ -18,7 +18,8 @@ from tools import (  # noqa: E402, I001
 
 
 # Sửa query và filter trực tiếp tại đây.
-QUERY = 'đơn phương chấm dứt hợp đồng lao động'
+# QUERY = 'đơn phương chấm dứt hợp đồng lao động'
+QUERY = 'đi ô tô vượt đèn đỏ bị phạt nhiu tiền'
 NGAY_BAN_HANH: dict[str, str] | None = None
 NGAY_CO_HIEU_LUC: dict[str, str] | None = None
 TINH_TRANG_HIEU_LUC: str | None = 'Còn hiệu lực'

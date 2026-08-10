@@ -46,6 +46,14 @@ class LegalDocumentSearchInput(BaseModel):
         default=None,
         description='Lọc chính xác số hiệu văn bản, ví dụ: 45/2019/QH14.',
     )
+    don_vi: str | None = Field(
+        default=None,
+        description=(
+            'Chỉ dùng don_vi="Trung ương" khi cần giới hạn ở văn bản cấp trung ương. '
+            'Không dùng trường này để lọc văn bản địa phương vì dữ liệu địa phương '
+            'chưa được chuẩn hóa và có nhiều cách biểu diễn.'
+        ),
+    )
     limit: int = Field(default=10, ge=1, le=50, description='Số văn bản tối đa trả về.')
 
 
@@ -89,6 +97,8 @@ def _build_search_body(search_input: LegalDocumentSearchInput) -> dict[str, Any]
         )
     if search_input.so_hieu:
         filters.append(_exact_filter('so_hieu', search_input.so_hieu))
+    if search_input.don_vi:
+        filters.append(_exact_filter('don_vi', search_input.don_vi))
 
     return {
         'size': search_input.limit,
@@ -207,11 +217,14 @@ async def search_legal_documents_func(
     ngay_co_hieu_luc: DateRange | None = None,
     tinh_trang_hieu_luc: str | None = None,
     so_hieu: str | None = None,
+    don_vi: str | None = None,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
     '''Tìm văn bản pháp luật bằng BM25 trên tiêu đề và toàn văn.
 
-    Có thể lọc theo ngày ban hành, ngày có hiệu lực, tình trạng hiệu lực và số hiệu.
+    Có thể lọc theo ngày ban hành, ngày có hiệu lực, tình trạng hiệu lực, số hiệu và
+    đơn vị ban hành. Chỉ dùng don_vi="Trung ương" để giới hạn ở văn bản cấp trung
+    ương; không dùng don_vi để lọc văn bản địa phương.
     Kết quả gồm thông tin document, metadata, cấu trúc văn bản và các đoạn khớp.
     '''
     search_input = LegalDocumentSearchInput(
@@ -220,6 +233,7 @@ async def search_legal_documents_func(
         ngay_co_hieu_luc=ngay_co_hieu_luc,
         tinh_trang_hieu_luc=tinh_trang_hieu_luc,
         so_hieu=so_hieu,
+        don_vi=don_vi,
         limit=limit,
     )
     return await _search_legal_documents(search_input)

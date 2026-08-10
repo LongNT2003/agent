@@ -25,6 +25,7 @@ def test_build_search_body_uses_search_fields_and_filters():
         ngay_co_hieu_luc=DateRange(tu='2021-01-01'),
         tinh_trang_hieu_luc='Còn hiệu lực',
         so_hieu='45/2019/QH14',
+        don_vi='Trung ương',
         limit=5,
     )
 
@@ -36,7 +37,39 @@ def test_build_search_body_uses_search_fields_and_filters():
     assert body['_source'] == {
         'excludes': ['toan_van', 'cleaned_toan_van', 'html_with_reference']
     }
-    assert len(body['query']['bool']['filter']) == 4
+    assert len(body['query']['bool']['filter']) == 5
+    assert body['query']['bool']['filter'][-1] == {
+        'bool': {
+            'should': [
+                {
+                    'term': {
+                        'don_vi': {
+                            'value': 'Trung ương',
+                            'case_insensitive': True,
+                        }
+                    }
+                },
+                {
+                    'term': {
+                        'don_vi.keyword': {
+                            'value': 'Trung ương',
+                            'case_insensitive': True,
+                        }
+                    }
+                },
+            ],
+            'minimum_should_match': 1,
+        }
+    }
+
+
+def test_legal_document_search_schema_limits_don_vi_to_central_documents():
+    schema = LegalDocumentSearchInput.model_json_schema()
+
+    assert 'don_vi' in schema['properties']
+    description = schema['properties']['don_vi']['description']
+    assert 'don_vi="Trung ương"' in description
+    assert 'Không dùng trường này để lọc văn bản địa phương' in description
 
 
 def test_format_hits_returns_document_info_metadata_and_structure():

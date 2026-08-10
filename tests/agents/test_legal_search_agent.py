@@ -40,6 +40,17 @@ def test_instructions_disable_title_and_require_retrieval_only_output() -> None:
     assert '{"documents": [' in module.instructions
 
 
+def test_instructions_require_evidence_for_every_search_intent() -> None:
+    assert "tách câu hỏi" in module.instructions
+    assert "mỗi tool call" in module.instructions
+    assert "cho một\n  intent" in module.instructions
+    assert "Phải có kết quả tool phù hợp cho từng intent trước khi dừng" in module.instructions
+    assert "hồ sơ thủ tục đăng ký" in module.instructions
+    assert 'tạm trú" và' in module.instructions
+    assert "trình tự thủ tục khai báo tạm vắng" in module.instructions
+    assert "documents rỗng" in module.instructions
+
+
 def test_known_candidate_ids_reads_es_and_global_term_results() -> None:
     state = {
         "messages": [

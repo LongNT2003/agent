@@ -35,8 +35,10 @@ tools = [
         """Tìm candidate văn bản pháp luật bằng BM25 trên tiêu đề và toàn văn.
 Dùng cho câu hỏi về hành vi, chế tài, điều kiện hoặc cụm từ pháp lý cụ thể. Viết lại query ngắn,
 sửa lỗi chính tả và chuyển cách nói đời thường thành thuật ngữ pháp lý. Có thể dùng các filter ngày,
-tình trạng hiệu lực và số hiệu khi người dùng cung cấp hoặc ngữ cảnh yêu cầu. Kết quả trả ID văn bản,
-score, metadata và highlight; ID này có thể được dùng ở bước kiểm chứng sau.""",
+tình trạng hiệu lực, số hiệu và don_vi khi người dùng cung cấp hoặc ngữ cảnh yêu cầu. Chỉ dùng
+don_vi="Trung ương" khi cần giới hạn ở văn bản cấp trung ương. Không dùng don_vi để lọc văn bản địa
+phương vì giá trị chưa được chuẩn hóa và có nhiều cách biểu diễn. Kết quả trả ID văn bản, score,
+metadata và highlight; ID này có thể được dùng ở bước kiểm chứng sau.""",
     ),
     _with_description(
         search_law_terms,
@@ -65,7 +67,7 @@ trong câu hỏi. Chỉ được kết luận dựa trên kết quả tool và l
 QUY TRÌNH TOOL BẮT BUỘC:
 1. Không sử dụng search_law_titles vì kết quả thiếu context và dễ nhiễu.
 2. Bước tìm candidate chỉ dùng search_legal_documents hoặc search_law_terms. Ở bước này chỉ dùng
-   filter nghiệp vụ như ngày, tình trạng hiệu lực, cơ quan ban hành, loại văn bản và số hiệu.
+   filter nghiệp vụ như ngày, tình trạng hiệu lực, cơ quan ban hành, loại văn bản, số hiệu và đơn vị.
 3. search_law_terms là tìm kiếm toàn cục và không có filter doc_id.
 4. Chỉ ở vòng sau, khi đã có candidate ID từ kết quả tool, mới gọi search_law_terms_in_document với
    đúng doc_id đó để tìm điều trong văn bản. Không gọi tìm candidate và kiểm chứng trong cùng một vòng.
@@ -74,9 +76,23 @@ QUY TRÌNH TOOL BẮT BUỘC:
    về đối tượng, thủ tục, mức phạt hoặc nguyên tắc xử phạt không đủ để xác nhận.
 
 QUY TẮC SEARCH VÀ ĐÁNH GIÁ:
+- Trước khi search, tách câu hỏi có nhiều đối tượng, hành vi hoặc thủ tục thành các intent độc lập
+  cần được bao phủ. Có thể gọi nhiều tool tìm candidate trong cùng một vòng, mỗi tool call cho một
+  intent; không gộp các intent thành query làm mất một vế.
+- Phải có kết quả tool phù hợp cho từng intent trước khi dừng. Một văn bản chỉ được xem là bao phủ
+  nhiều intent khi bằng chứng từ tool thể hiện riêng từng intent; không được suy ra intent chưa search
+  từ việc văn bản đã khớp intent khác.
+- Ví dụ, "đăng ký tạm trú tạm vắng" phải được chuẩn hóa và tìm riêng thành "hồ sơ thủ tục đăng ký
+  tạm trú" và "trình tự thủ tục khai báo tạm vắng". Không dừng chỉ vì đã tìm thấy một trong hai.
+- Nếu còn intent chưa được bao phủ thì phải viết lại query và search tiếp. Nếu hết vòng mà vẫn thiếu
+  bất kỳ intent bắt buộc nào, trả documents rỗng thay vì trả kết quả mới chỉ bao phủ một phần.
 - Với câu hỏi có ý nghĩa hiện tại như "bị phạt bao nhiêu", "hiện nay" hoặc "được phép không", đặt
   tinh_trang_hieu_luc="Còn hiệu lực", trừ khi người dùng yêu cầu tra cứu lịch sử.
 - Không thêm số hiệu văn bản nếu số hiệu đó chưa có trong câu hỏi hoặc kết quả tool.
+- Với search_legal_documents, dùng don_vi="Trung ương" khi người dùng chỉ cần văn bản cấp trung ương
+  như luật, nghị định, hiến pháp, thông tư. Không dùng don_vi cho yêu cầu địa phương vì dữ liệu chưa được chuẩn
+  hóa; đưa địa danh hoặc cơ quan vào query nếu cần. Không tự thêm don_vi nếu câu hỏi không giới hạn
+  phạm vi ban hành.
 - Chuẩn hóa cách nói đời thường thành thuật ngữ pháp lý; không giữ từ đa nghĩa đứng riêng. Ví dụ đổi
   "vượt đèn đỏ" thành "không chấp hành hiệu lệnh của đèn tín hiệu giao thông".
 - Sau mỗi vòng, kiểm tra kết quả có thật sự khớp đối tượng, hành vi và nhu cầu hay chỉ khớp từ chung.

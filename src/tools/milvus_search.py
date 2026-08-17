@@ -45,7 +45,7 @@ class MilvusLegalSearchInput(BaseModel):
         description="Lọc chính xác loại văn bản.",
     )
     so_hieu: str | None = Field(default=None, description="Lọc chính xác số hiệu văn bản.")
-    limit: int = Field(default=10, ge=1, le=50, description="Số kết quả tối đa trả về.")
+    limit: int = Field(default=20, ge=1, le=50, description="Số kết quả tối đa trả về.")
 
 
 class LawTermSearchInput(MilvusLegalSearchInput):
@@ -248,7 +248,7 @@ async def search_law_terms_func(
     co_quan_ban_hanh: str | None = None,
     loai_van_ban: str | None = None,
     so_hieu: str | None = None,
-    limit: int = 10,
+    limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Tìm định nghĩa thuật ngữ pháp luật theo ngữ nghĩa trong law_terms_CMC."""
     search_input = LawTermSearchInput(
@@ -276,7 +276,7 @@ async def search_law_terms_in_document_func(
     co_quan_ban_hanh: str | None = None,
     loai_van_ban: str | None = None,
     so_hieu: str | None = None,
-    limit: int = 10,
+    limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Tìm điều, khoản trong một văn bản ứng viên đã biết ID."""
     search_input = LawTermInDocumentSearchInput(
@@ -305,7 +305,7 @@ async def search_law_titles_func(
     loai_van_ban: str | None = None,
     so_hieu: str | None = None,
     id_document: int | None = None,
-    limit: int = 10,
+    limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Tìm văn bản pháp luật theo ngữ nghĩa tiêu đề/trích yếu trong law_title_CMC."""
     search_input = LawTitleSearchInput(

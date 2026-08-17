@@ -67,7 +67,7 @@ class LegalDocumentSearchInput(BaseModel):
             "chưa được chuẩn hóa và có nhiều cách biểu diễn."
         ),
     )
-    limit: int = Field(default=10, ge=1, le=50, description="Số văn bản tối đa trả về.")
+    limit: int = Field(default=20, ge=1, le=50, description="Số văn bản tối đa trả về.")
 
 
 def _date_range_filter(field: str, value: DateRange) -> dict[str, Any]:
@@ -233,7 +233,7 @@ async def search_legal_documents_func(
     tinh_trang_hieu_luc: str | list[str] | None = None,
     so_hieu: str | None = None,
     don_vi: str | None = None,
-    limit: int = 10,
+    limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Tìm văn bản pháp luật bằng BM25 trên tiêu đề và toàn văn.
 

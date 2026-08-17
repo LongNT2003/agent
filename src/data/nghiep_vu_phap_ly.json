@@ -1,0 +1,12 @@
+[
+  {
+    "id": "van_ban_hop_nhat",
+    "document_type": "Văn bản hợp nhất (VBHN)",
+    "rule": "Văn bản hợp nhất chỉ dùng để tra cứu, tham khảo nội dung đã được hợp nhất; không phải là văn bản quy phạm pháp luật độc lập và không được chọn làm văn bản đích để đối chiếu, áp dụng hoặc xử lý pháp luật. Khi câu hỏi yêu cầu xác định căn cứ pháp lý, chế tài, quyền, nghĩa vụ hoặc quy định áp dụng, phải tìm và trả văn bản quy phạm pháp luật gốc cùng văn bản sửa đổi, bổ sung còn áp dụng đã tạo ra quy định đó. Chỉ trả văn bản hợp nhất khi người dùng yêu cầu đích danh chính văn bản hợp nhất hoặc nhu cầu chỉ là tra cứu bản hợp nhất."
+  },
+  {
+    "id": "cong_van_chap_thuan",
+    "document_type": "Công văn",
+    "rule": "Công văn chấp thuận, đồng ý, cho ý kiến hoặc thông báo việc chấp thuận một vấn đề chỉ phản ánh quyết định hay ý kiến hành chính đối với vụ việc cụ thể; không phải văn bản quy phạm pháp luật và không tự chứa quy tắc pháp lý chung để làm căn cứ xác định chế tài, quyền hoặc nghĩa vụ. Chỉ chọn công văn khi intent của người dùng là tìm chính việc chấp thuận, đồng ý, cho ý kiến hoặc thông báo đó. Nếu người dùng hỏi văn bản quy phạm pháp luật được đề nghị xây dựng, sửa đổi hoặc ban hành, hay hỏi nội dung pháp lý áp dụng, phải tiếp tục tìm văn bản quy phạm pháp luật tương ứng; không coi nội dung đề nghị hoặc văn bản được nhắc tới là nội dung pháp lý của công văn."
+  }
+]

@@ -33,9 +33,30 @@ def _load_legal_statuses() -> list[str]:
     return values
 
 
+def _load_legal_business_rules() -> list[dict[str, str]]:
+    path = Path(__file__).parents[1] / "data" / "nghiep_vu_phap_ly.json"
+    with path.open(encoding="utf-8") as file:
+        rules = json.load(file)
+    required_fields = {"id", "document_type", "rule"}
+    if not isinstance(rules, list) or not rules:
+        raise RuntimeError(f"Danh sách nghiệp vụ pháp lý không hợp lệ: {path}")
+    for rule in rules:
+        if not isinstance(rule, dict) or set(rule) != required_fields:
+            raise RuntimeError(f"Cấu trúc nghiệp vụ pháp lý không hợp lệ: {path}")
+        if not all(isinstance(rule[field], str) and rule[field].strip() for field in required_fields):
+            raise RuntimeError(f"Nội dung nghiệp vụ pháp lý không hợp lệ: {path}")
+    return rules
+
+
 LEGAL_STATUSES = _load_legal_statuses()
+LEGAL_BUSINESS_RULES = _load_legal_business_rules()
 CURRENT_RULE_STATUSES = ["Còn hiệu lực", "Chưa có hiệu lực", "Hết hiệu lực một phần"]
 LEGAL_STATUSES_TEXT = json.dumps(LEGAL_STATUSES, ensure_ascii=False)
+LEGAL_BUSINESS_RULES_TEXT = json.dumps(
+    LEGAL_BUSINESS_RULES,
+    ensure_ascii=False,
+    indent=2,
+)
 CURRENT_RULE_STATUSES_TEXT = json.dumps(CURRENT_RULE_STATUSES, ensure_ascii=False)
 
 
@@ -87,6 +108,13 @@ instructions = f"""Bạn là agent truy hồi văn bản pháp luật Việt Nam
 
 Nhiệm vụ duy nhất là xác định một hoặc nhiều văn bản đích phù hợp; không trả lời nội dung pháp luật
 trong câu hỏi. Chỉ được kết luận dựa trên kết quả tool và luôn search ít nhất một lần.
+
+NGHIỆP VỤ PHÁP LÝ BẮT BUỘC ÁP DỤNG:
+Danh sách dưới đây được nạp từ file JSON. Phải áp dụng từng rule khi đánh giá candidate. Rule nghiệp vụ
+có thể loại một candidate dù candidate có score cao, chứa đúng đoạn nội dung hoặc có tình trạng còn
+hiệu lực. Khi candidate bị loại theo rule, phải tiếp tục tìm đúng loại văn bản được rule yêu cầu nếu
+vẫn còn vòng search.
+{LEGAL_BUSINESS_RULES_TEXT}
 
 QUY TRÌNH TOOL BẮT BUỘC:
 1. Không sử dụng search_law_titles vì kết quả thiếu context và dễ nhiễu.
@@ -150,7 +178,7 @@ QUY TẮC SEARCH VÀ ĐÁNH GIÁ:
   "vượt đèn đỏ" thành "không chấp hành hiệu lệnh của đèn tín hiệu giao thông".
 - Sau mỗi vòng, kiểm tra kết quả có thật sự khớp đối tượng, hành vi và nhu cầu hay chỉ khớp từ chung.
 - Trước khi kết luận, đối chiếu lại candidate với toàn bộ ràng buộc trong câu hỏi, đặc biệt là loại
-  văn bản và tình trạng hiệu lực. 
+  văn bản, tình trạng hiệu lực và danh sách nghiệp vụ pháp lý bắt buộc.
 - Nếu chưa chắc chắn, đổi query hoặc tool; không lặp nguyên query với cùng tool sau kết quả sai.
 - Nếu chưa tìm được candidate mong muốn, ngoài việc đổi tool hoặc cách diễn đạt query, phải cân nhắc
   nới rộng truy vấn để tăng recall: rút gọn query về đối tượng/hành vi cốt lõi, dùng thuật ngữ pháp lý

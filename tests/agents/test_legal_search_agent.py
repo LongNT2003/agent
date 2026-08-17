@@ -48,6 +48,26 @@ def test_instructions_require_final_candidate_reasoning() -> None:
     assert "Không trình bày chuỗi suy luận chi tiết" in module.instructions
 
 
+def test_instructions_import_legal_business_rules_from_json() -> None:
+    rules_path = Path(__file__).parents[2] / "src" / "data" / "nghiep_vu_phap_ly.json"
+    rules = json.loads(rules_path.read_text(encoding="utf-8"))
+
+    assert module.LEGAL_BUSINESS_RULES == rules
+    assert len(rules) == 2
+    assert {rule["id"] for rule in rules} == {"van_ban_hop_nhat", "cong_van_chap_thuan"}
+    assert all(rule["rule"] in module.instructions for rule in rules)
+    assert "Rule nghiệp vụ\ncó thể loại một candidate dù candidate có score cao" in module.instructions
+
+
+def test_legal_business_rules_distinguish_reference_and_normative_documents() -> None:
+    rules = {rule["id"]: rule["rule"] for rule in module.LEGAL_BUSINESS_RULES}
+
+    assert "không được chọn làm văn bản đích" in rules["van_ban_hop_nhat"]
+    assert "văn bản quy phạm pháp luật gốc" in rules["van_ban_hop_nhat"]
+    assert "không phải văn bản quy phạm pháp luật" in rules["cong_van_chap_thuan"]
+    assert "Chỉ chọn công văn khi intent" in rules["cong_van_chap_thuan"]
+
+
 def test_instructions_require_reason_for_every_search_call() -> None:
     assert "Mỗi tool call phải có search_reason" in module.instructions
     assert 'không được mặc định đồng nhất "mới" với "Còn hiệu lực"' in module.instructions

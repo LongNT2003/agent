@@ -53,6 +53,13 @@ def test_instructions_require_reason_for_every_search_call() -> None:
     assert 'không được mặc định đồng nhất "mới" với "Còn hiệu lực"' in module.instructions
 
 
+def test_instructions_require_dynamic_limit_instead_of_fixed_value() -> None:
+    assert "luôn truyền tham số\n   limit" in module.instructions
+    assert "truyền tham số limit phù hợp" in module.instructions
+    assert "limit=20" not in module.instructions
+    assert all("limit=20" not in tool.description for tool in module.tools)
+
+
 def test_instructions_require_evidence_for_every_search_intent() -> None:
     assert "tách câu hỏi" in module.instructions
     assert "mỗi tool call" in module.instructions
@@ -141,6 +148,76 @@ async def test_call_tools_accepts_candidate_from_previous_result(
     )
 
     tool_node_call.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_call_tools_accepts_multiple_candidates_from_previous_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool_node_call = AsyncMock(return_value={"messages": []})
+    monkeypatch.setattr(module.tool_node, "ainvoke", tool_node_call)
+    candidate_result = ToolMessage(
+        content=json.dumps([{"doc_info": {"id": "173920"}}, {"doc_id": 170620}]),
+        name="search_law_terms",
+        tool_call_id="term-1",
+    )
+
+    await module.call_tools(
+        {
+            "messages": [
+                candidate_result,
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "search_law_terms_in_document",
+                            "args": {"query": "x", "doc_id": [173920, 170620]},
+                            "id": "verify-1",
+                        }
+                    ],
+                ),
+            ]
+        },
+        {},
+    )
+
+    tool_node_call.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_call_tools_rejects_list_containing_unknown_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool_node_call = AsyncMock()
+    monkeypatch.setattr(module.tool_node, "ainvoke", tool_node_call)
+    candidate_result = ToolMessage(
+        content=json.dumps([{"doc_info": {"id": "173920"}}]),
+        name="search_legal_documents",
+        tool_call_id="es-1",
+    )
+
+    result = await module.call_tools(
+        {
+            "messages": [
+                candidate_result,
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "search_law_terms_in_document",
+                            "args": {"query": "x", "doc_id": [173920, 999]},
+                            "id": "verify-1",
+                        }
+                    ],
+                ),
+            ]
+        },
+        {},
+    )
+
+    tool_node_call.assert_not_awaited()
+    assert result["messages"][0].status == "error"
+    assert "mọi doc_id phải xuất hiện" in result["messages"][0].content
 
 
 def test_normalize_final_response_flattens_gemini_text_blocks() -> None:

@@ -6,7 +6,7 @@ from threading import Lock
 from typing import Any, Literal
 
 from langchain_core.tools import BaseTool, tool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core import settings
 
@@ -53,9 +53,21 @@ class LawTermSearchInput(MilvusLegalSearchInput):
 
 
 class LawTermInDocumentSearchInput(MilvusLegalSearchInput):
-    """Input for searching legal terms inside a known candidate document."""
+    """Input for searching legal terms inside one or more known candidate documents."""
 
-    doc_id: int = Field(description="ID văn bản ứng viên đã tìm thấy ở bước trước.")
+    doc_id: int | list[int] = Field(
+        description=(
+            "Một ID hoặc danh sách ID văn bản ứng viên đã tìm thấy ở bước trước. "
+            "Nhiều ID được kết hợp theo OR (Milvus IN)."
+        )
+    )
+
+    @field_validator("doc_id")
+    @classmethod
+    def validate_doc_ids(cls, value: int | list[int]) -> int | list[int]:
+        if isinstance(value, list) and not 1 <= len(value) <= 10:
+            raise ValueError("Danh sách doc_id phải chứa từ 1 đến 10 ID.")
+        return value
 
 
 class LawTitleSearchInput(MilvusLegalSearchInput):
@@ -147,7 +159,11 @@ def _build_filter(search_input: MilvusLegalSearchInput) -> str | None:
                 expressions.append(f'{field} == "{_escape_filter_value(value)}"')
 
     if isinstance(search_input, LawTermInDocumentSearchInput):
-        expressions.append(f"doc_id == {search_input.doc_id}")
+        if isinstance(search_input.doc_id, list):
+            encoded_ids = ", ".join(str(doc_id) for doc_id in search_input.doc_id)
+            expressions.append(f"doc_id in [{encoded_ids}]")
+        else:
+            expressions.append(f"doc_id == {search_input.doc_id}")
     if isinstance(search_input, LawTitleSearchInput) and search_input.id_document is not None:
         expressions.append(f"id_document == {search_input.id_document}")
     return " and ".join(expressions) or None
@@ -270,7 +286,7 @@ async def search_law_terms_func(
 
 async def search_law_terms_in_document_func(
     query: str,
-    doc_id: int,
+    doc_id: int | list[int],
     search_reason: str,
     tinh_trang_hieu_luc: str | list[str] | None = None,
     co_quan_ban_hanh: str | None = None,
@@ -278,7 +294,7 @@ async def search_law_terms_in_document_func(
     so_hieu: str | None = None,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
-    """Tìm điều, khoản trong một văn bản ứng viên đã biết ID."""
+    """Tìm điều, khoản trong một hoặc nhiều văn bản ứng viên đã biết ID."""
     search_input = LawTermInDocumentSearchInput(
         query=query,
         doc_id=doc_id,

@@ -56,8 +56,8 @@ sửa lỗi chính tả và chuyển cách nói đời thường thành thuật 
 tình trạng hiệu lực, số hiệu và don_vi khi người dùng cung cấp hoặc ngữ cảnh yêu cầu. Chỉ dùng
 don_vi="Trung ương" khi cần giới hạn ở văn bản cấp trung ương. Không dùng don_vi để lọc văn bản địa
 phương vì giá trị chưa được chuẩn hóa và có nhiều cách biểu diễn. Kết quả trả ID văn bản, score,
-metadata và highlight. Ở bước tìm candidate phải lấy top 20 bằng limit=20; ID kết quả được dùng ở
-bước kiểm chứng sau.""",
+metadata và highlight. Ở bước tìm candidate phải truyền tham số limit phù hợp với độ rộng truy vấn;
+ID kết quả được dùng ở bước kiểm chứng sau.""",
     ),
     _with_description(
         search_law_terms,
@@ -65,18 +65,19 @@ bước kiểm chứng sau.""",
 Tool này chỉ dành cho bước tìm kiếm toàn cục và không nhận doc_id. Có thể lọc theo tình trạng hiệu lực,
 cơ quan ban hành, loại văn bản và số hiệu. Viết query thành đối tượng + hành vi pháp lý chuẩn hóa +
 nhu cầu tra cứu; ví dụ đổi "vượt đèn đỏ" thành "người điều khiển xe ô tô không chấp hành hiệu lệnh
-của đèn tín hiệu giao thông". Ở bước tìm candidate phải lấy top 20 bằng limit=20. Kết quả trả doc_id
-của các văn bản ứng viên cùng nội dung điều khoản.""",
+của đèn tín hiệu giao thông". Ở bước tìm candidate phải truyền tham số limit phù hợp với độ rộng
+truy vấn. Kết quả trả doc_id của các văn bản ứng viên cùng nội dung điều khoản.""",
     ),
     _with_description(
         search_law_terms_in_document,
-        """Kiểm chứng một candidate bằng cách tìm top điều khoản hoặc đoạn nội dung tương đồng nhất
-bên trong đúng văn bản đó; dùng limit=20.
-Chỉ gọi ở vòng sau khi doc_id đã xuất hiện trong kết quả search_legal_documents hoặc
+        """Kiểm chứng candidate bằng cách tìm top điều khoản hoặc đoạn nội dung tương đồng nhất
+bên trong một hoặc nhiều văn bản. Phải truyền tham số limit phù hợp với số candidate và độ rộng truy
+vấn. Truyền một doc_id hoặc danh sách doc_id; nhiều ID được lọc theo OR trong cùng một lần gọi.
+Chỉ gọi ở vòng sau khi mọi doc_id đã xuất hiện trong kết quả search_legal_documents hoặc
 search_law_terms của vòng trước. doc_id là bắt buộc và không được tự đoán. Nếu kết quả chỉ là các điều
 chung hoặc không chứa nội dung có thể trả lời câu hỏi người dùng, candidate không đạt và phải quay lại
-tìm candidate khác. Khi vòng trước có nhiều candidate còn khả năng đáp ứng intent, phải gọi tool song
-song cho tất cả candidate đã chọn, tối đa 10; không chỉ kiểm chứng riêng văn bản có score cao nhất.""",
+tìm candidate khác. Khi vòng trước có nhiều candidate còn khả năng đáp ứng intent, truyền tất cả ID
+đã chọn trong một danh sách, tối đa 10; không chỉ kiểm chứng riêng văn bản có score cao nhất.""",
     ),
 ]
 
@@ -89,23 +90,25 @@ trong câu hỏi. Chỉ được kết luận dựa trên kết quả tool và l
 
 QUY TRÌNH TOOL BẮT BUỘC:
 1. Không sử dụng search_law_titles vì kết quả thiếu context và dễ nhiễu.
-2. Bước tìm candidate chỉ dùng search_legal_documents hoặc search_law_terms và luôn đặt limit=20 để
-   lấy top 20 candidate. Ở bước này chỉ dùng
-   filter nghiệp vụ như ngày, tình trạng hiệu lực, cơ quan ban hành, loại văn bản, số hiệu và đơn vị.
+2. Bước tìm candidate chỉ dùng search_legal_documents hoặc search_law_terms và luôn truyền tham số
+   limit trong khoảng tool cho phép, lựa chọn theo độ rộng truy vấn và số candidate cần đánh giá. Ở
+   bước này chỉ dùng filter nghiệp vụ như ngày, tình trạng hiệu lực, cơ quan ban hành, loại văn bản,
+   số hiệu và đơn vị.
    Mỗi tool call phải có search_reason giải thích ngắn intent đang tìm, vì sao chọn tool đó, và vì sao
    dùng hoặc không dùng từng filter. Đây là kế hoạch search trước khi có kết quả, không được khẳng định
    dữ kiện chưa được tool xác nhận.
 3. search_law_terms là tìm kiếm toàn cục và không có filter doc_id.
-4. Sau khi nhận top 20, khử trùng lặp theo doc_id rồi đánh giá tiêu đề, metadata và highlight. Phải
+4. Sau khi nhận kết quả, khử trùng lặp theo doc_id rồi đánh giá tiêu đề, metadata và highlight. Phải
    giữ lại toàn bộ candidate còn khả năng đáp ứng đầy đủ intent và các ràng buộc chính, nhưng không quá
    10 văn bản. N bằng min(10, số candidate còn hợp lý), không phải mặc định N=1 hoặc chỉ lấy văn bản
    có score cao nhất. Nếu có nhiều văn bản cùng khớp chủ đề, năm, đối tượng hoặc có vai trò khác nhau
    như đề xuất, chấp thuận, thông báo hay triển khai, phải giữ chúng để phân biệt bằng nội dung.
-5. Ở vòng kế tiếp, bắt buộc gọi search_law_terms_in_document cho từng candidate đã chọn, với đúng
-   doc_id và limit=20, để lấy các điều khoản hoặc đoạn nội dung tương đồng nhất bên trong mỗi văn bản.
-   Phải phát tất cả các tool call kiểm chứng này song song trong cùng một vòng, tối đa 10 lần; không
-   được chỉ gọi cho top 1 rồi kết luận khi vẫn còn candidate hợp lý chưa được kiểm chứng. Không gọi tìm
-   candidate và kiểm chứng trong cùng một vòng; không tự tạo hoặc suy đoán doc_id.
+5. Ở vòng kế tiếp, bắt buộc gọi search_law_terms_in_document với đúng danh sách doc_id của tất cả
+   candidate đã chọn và truyền tham số limit phù hợp, để lấy các điều khoản hoặc đoạn nội dung tương
+   đồng nhất trong tập văn bản đó. Nhiều doc_id được kết hợp theo OR trong một tool call, tối đa 10 ID;
+   không được chỉ gửi
+   top 1 khi vẫn còn candidate hợp lý chưa được kiểm chứng.
+   Không gọi tìm candidate và kiểm chứng trong cùng một vòng; không tự tạo hoặc suy đoán doc_id.
 6. Bước kiểm chứng dùng để xác định câu trả lời cho câu hỏi người dùng có thực sự tồn tại ở cấp điều
    khoản hoặc đoạn nội dung trong văn bản hay không. Chỉ xác nhận candidate khi evidence bên trong chứa
    nội dung trực tiếp đáp ứng intent; tiêu đề, metadata, score hoặc nội dung dẫn chiếu chung không đủ.
@@ -272,10 +275,14 @@ async def call_tools(state: LegalSearchState, config: RunnableConfig) -> dict[st
     for call in last_message.tool_calls:
         if call["name"] != "search_law_terms_in_document":
             valid_calls.append(call)
-        elif str(call.get("args", {}).get("doc_id")) in candidates:
-            valid_calls.append(call)
         else:
-            rejected_calls.append(call)
+            requested_ids = call.get("args", {}).get("doc_id")
+            if not isinstance(requested_ids, list):
+                requested_ids = [requested_ids]
+            if requested_ids and all(str(doc_id) in candidates for doc_id in requested_ids):
+                valid_calls.append(call)
+            else:
+                rejected_calls.append(call)
 
     tool_messages: list[Any] = []
     if valid_calls:
@@ -293,7 +300,7 @@ async def call_tools(state: LegalSearchState, config: RunnableConfig) -> dict[st
         tool_messages.append(
             ToolMessage(
                 content=(
-                    "Từ chối kiểm chứng: doc_id phải xuất hiện trong kết quả search candidate của "
+                    "Từ chối kiểm chứng: mọi doc_id phải xuất hiện trong kết quả search candidate của "
                     "vòng trước. Hãy gọi search_legal_documents hoặc search_law_terms trước."
                 ),
                 name=call["name"],

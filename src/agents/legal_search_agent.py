@@ -3,6 +3,7 @@
 import json
 from datetime import datetime
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -19,6 +20,23 @@ from tools import (
     search_law_terms_in_document,
     search_legal_documents,
 )
+
+
+def _load_legal_statuses() -> list[str]:
+    path = Path(__file__).parents[1] / "data" / "tinh_trang_hieu_luc.json"
+    with path.open(encoding="utf-8") as file:
+        values = json.load(file)
+    if not isinstance(values, list) or not all(
+        isinstance(value, str) and value for value in values
+    ):
+        raise RuntimeError(f"Danh mục tình trạng hiệu lực không hợp lệ: {path}")
+    return values
+
+
+LEGAL_STATUSES = _load_legal_statuses()
+CURRENT_RULE_STATUSES = ["Còn hiệu lực", "Chưa có hiệu lực", "Hết hiệu lực một phần"]
+LEGAL_STATUSES_TEXT = json.dumps(LEGAL_STATUSES, ensure_ascii=False)
+CURRENT_RULE_STATUSES_TEXT = json.dumps(CURRENT_RULE_STATUSES, ensure_ascii=False)
 
 
 class LegalSearchState(MessagesState, total=False):
@@ -89,8 +107,20 @@ QUY TẮC SEARCH VÀ ĐÁNH GIÁ:
   tạm trú" và "trình tự thủ tục khai báo tạm vắng". Không dừng chỉ vì đã tìm thấy một trong hai.
 - Nếu còn intent chưa được bao phủ thì phải viết lại query và search tiếp. Nếu hết vòng mà vẫn thiếu
   bất kỳ intent bắt buộc nào, trả documents rỗng thay vì trả kết quả mới chỉ bao phủ một phần.
-- Với câu hỏi có ý nghĩa hiện tại như "bị phạt bao nhiêu", "hiện nay" hoặc "được phép không", ưu tiên đặt
-  tinh_trang_hieu_luc in ["Còn hiệu lực", "Chưa có hiệu lực", "Hết hiệu lực một phần"], trừ khi người dùng yêu cầu tra cứu lịch sử.
+- Chỉ coi là câu hỏi về quy tắc hiện hành khi câu hỏi xác định rõ việc áp dụng pháp luật cho một tình
+  huống, hoặc hỏi rõ quy định đang/chuẩn bị áp dụng, ví dụ: "bị phạt bao nhiêu", "hiện nay có được
+  phép không", "điều kiện đang áp dụng". Khi đó PHẢI truyền chính xác và đầy đủ
+  tinh_trang_hieu_luc={CURRENT_RULE_STATUSES_TEXT}; không được rút gọn còn một hoặc hai giá trị. Tool
+  sẽ kết hợp ba giá trị theo OR. Ví dụ "ô tô vượt đèn đỏ hiện nay bị phạt bao nhiêu" phải dùng đúng
+  danh sách ba giá trị này.
+- Ngoài trường hợp trên, khuyến khích search tự do và để tinh_trang_hieu_luc=null nhằm giữ độ phủ.
+  Tra cứu lịch, sự kiện, ngày nghỉ, chủ đề, tiêu đề, số hiệu, cơ quan hoặc một năm cụ thể không tự nó
+  phải là câu hỏi quy tắc hiện hành, và không được mặc định đồng nhất "mới" với "Còn hiệu lực".
+- Nếu người dùng nêu rõ tình trạng cần tìm thì dùng đúng tình trạng đó, kể cả khi nằm ngoài nhóm hiện
+  hành; trường hợp này có thể truyền danh sách một phần tử. Các giá trị tình trạng hiệu lực hiện có
+  trong dữ liệu là: {LEGAL_STATUSES_TEXT}.
+- Filter tình trạng là filter chính xác và có thể làm mất candidate. Nếu kết quả đã lọc không đáp ứng
+  ràng buộc chính, phải thử lại không có filter tình trạng khi vẫn còn vòng search.
 - Không thêm số hiệu văn bản nếu số hiệu đó chưa có trong câu hỏi hoặc kết quả tool.
 - Với search_legal_documents, dùng don_vi="Trung ương" khi người dùng chỉ cần văn bản cấp trung ương
   như luật, nghị định, hiến pháp, thông tư. Không dùng don_vi cho yêu cầu địa phương vì dữ liệu chưa được chuẩn
@@ -102,6 +132,11 @@ QUY TẮC SEARCH VÀ ĐÁNH GIÁ:
 - Trước khi kết luận, đối chiếu lại candidate với toàn bộ ràng buộc trong câu hỏi, đặc biệt là loại
   văn bản và tình trạng hiệu lực. 
 - Nếu chưa chắc chắn, đổi query hoặc tool; không lặp nguyên query với cùng tool sau kết quả sai.
+- Nếu chưa tìm được candidate mong muốn, ngoài việc đổi tool hoặc cách diễn đạt query, phải cân nhắc
+  nới rộng truy vấn để tăng recall: rút gọn query về đối tượng/hành vi cốt lõi, dùng thuật ngữ pháp lý
+  tổng quát hơn, hoặc bỏ bớt filter không do người dùng yêu cầu và không phải ràng buộc bắt buộc.
+  Không được nới rộng bằng cách bỏ qua đối tượng, hành vi, phạm vi hoặc điều kiện mà người dùng đã nêu
+  rõ. Mỗi lần nới rộng phải giải thích ngắn trong search_reason.
 - Không xem top-k hoặc score cao là bằng chứng duy nhất. Nếu kiểm chứng thất bại, loại candidate và
   quay lại search candidate khác nếu còn vòng.
 

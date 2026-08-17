@@ -27,9 +27,14 @@ class MilvusLegalSearchInput(BaseModel):
             "kết quả tool xác nhận."
         ),
     )
-    tinh_trang_hieu_luc: str | None = Field(
+    tinh_trang_hieu_luc: str | list[str] | None = Field(
         default=None,
-        description="Lọc chính xác tình trạng hiệu lực, ví dụ: Còn hiệu lực.",
+        description=(
+            "Lọc chính xác theo một hoặc nhiều tình trạng hiệu lực. Nhiều giá trị "
+            "được kết hợp theo OR. Với câu hỏi tình huống hoặc quy tắc hiện hành, "
+            'phải truyền đủ ["Còn hiệu lực", "Chưa có hiệu lực", '
+            '"Hết hiệu lực một phần"], không rút gọn còn một giá trị.'
+        ),
     )
     co_quan_ban_hanh: str | None = Field(
         default=None,
@@ -135,7 +140,11 @@ def _build_filter(search_input: MilvusLegalSearchInput) -> str | None:
     for field in ("tinh_trang_hieu_luc", "co_quan_ban_hanh", "loai_van_ban", "so_hieu"):
         value = getattr(search_input, field)
         if value:
-            expressions.append(f'{field} == "{_escape_filter_value(value)}"')
+            if isinstance(value, list):
+                encoded_values = ", ".join(f'"{_escape_filter_value(item)}"' for item in value)
+                expressions.append(f"{field} in [{encoded_values}]")
+            else:
+                expressions.append(f'{field} == "{_escape_filter_value(value)}"')
 
     if isinstance(search_input, LawTermInDocumentSearchInput):
         expressions.append(f"doc_id == {search_input.doc_id}")
@@ -235,7 +244,7 @@ def _search_collection(
 async def search_law_terms_func(
     query: str,
     search_reason: str,
-    tinh_trang_hieu_luc: str | None = None,
+    tinh_trang_hieu_luc: str | list[str] | None = None,
     co_quan_ban_hanh: str | None = None,
     loai_van_ban: str | None = None,
     so_hieu: str | None = None,
@@ -263,7 +272,7 @@ async def search_law_terms_in_document_func(
     query: str,
     doc_id: int,
     search_reason: str,
-    tinh_trang_hieu_luc: str | None = None,
+    tinh_trang_hieu_luc: str | list[str] | None = None,
     co_quan_ban_hanh: str | None = None,
     loai_van_ban: str | None = None,
     so_hieu: str | None = None,
@@ -291,7 +300,7 @@ async def search_law_terms_in_document_func(
 async def search_law_titles_func(
     query: str,
     search_reason: str,
-    tinh_trang_hieu_luc: str | None = None,
+    tinh_trang_hieu_luc: str | list[str] | None = None,
     co_quan_ban_hanh: str | None = None,
     loai_van_ban: str | None = None,
     so_hieu: str | None = None,

@@ -21,6 +21,7 @@ def test_date_range_requires_a_bound():
 def test_build_search_body_uses_search_fields_and_filters():
     search_input = LegalDocumentSearchInput(
         query='đơn phương chấm dứt hợp đồng',
+        search_reason='Tìm văn bản theo từ khóa và các filter được chỉ định.',
         ngay_ban_hanh=DateRange(tu='2019-01-01', den='2024-12-31'),
         ngay_co_hieu_luc=DateRange(tu='2021-01-01'),
         tinh_trang_hieu_luc='Còn hiệu lực',
@@ -70,6 +71,13 @@ def test_legal_document_search_schema_limits_don_vi_to_central_documents():
     description = schema['properties']['don_vi']['description']
     assert 'don_vi="Trung ương"' in description
     assert 'Không dùng trường này để lọc văn bản địa phương' in description
+
+
+def test_legal_document_search_requires_search_reason():
+    schema = LegalDocumentSearchInput.model_json_schema()
+
+    assert 'search_reason' in schema['required']
+    assert 'Không nêu kết luận chưa được' in schema['properties']['search_reason']['description']
 
 
 def test_format_hits_returns_document_info_metadata_and_structure():
@@ -132,7 +140,9 @@ async def test_search_calls_configured_elasticsearch_endpoint():
         patch.object(settings, 'ELK_PASSWORD', SecretStr('secret')),
         patch('tools.elasticsearch_search.httpx.AsyncClient', return_value=context_manager),
     ):
-        result = await _search_legal_documents(LegalDocumentSearchInput(query='thử việc'))
+        result = await _search_legal_documents(
+            LegalDocumentSearchInput(query='thử việc', search_reason='Kiểm thử truy vấn.')
+        )
 
     assert result == []
     client.post.assert_awaited_once()
@@ -146,4 +156,6 @@ async def test_search_requires_endpoint_and_index():
         patch.object(settings, 'ELK_DOCUMENT_INDEX', None),
     ):
         with pytest.raises(RuntimeError, match='ELK_ENDPOINT, ELK_DOCUMENT_INDEX'):
-            await _search_legal_documents(LegalDocumentSearchInput(query='thử việc'))
+            await _search_legal_documents(
+                LegalDocumentSearchInput(query='thử việc', search_reason='Kiểm thử cấu hình.')
+            )

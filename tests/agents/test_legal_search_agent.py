@@ -30,6 +30,8 @@ def test_tool_descriptions_define_staged_search() -> None:
     assert "không nhận doc_id" in descriptions["search_law_terms"]
     assert "vòng sau" in descriptions["search_law_terms_in_document"]
     assert "không được tự đoán" in descriptions["search_law_terms_in_document"]
+    assert "search_reason" in module.tools[0].args
+    assert "default" not in module.tools[0].args["search_reason"]
 
 
 def test_instructions_disable_title_and_require_retrieval_only_output() -> None:
@@ -38,6 +40,17 @@ def test_instructions_disable_title_and_require_retrieval_only_output() -> None:
     assert "không có filter doc_id" in module.instructions
     assert "Không gọi tìm candidate và kiểm chứng trong cùng một vòng" in module.instructions
     assert '{"documents": [' in module.instructions
+    assert '"reasoning": "Kết luận kiểm chứng ngắn' in module.instructions
+
+
+def test_instructions_require_final_candidate_reasoning() -> None:
+    assert "đối chiếu lại candidate với toàn bộ ràng buộc" in module.instructions
+    assert "Không trình bày chuỗi suy luận chi tiết" in module.instructions
+
+
+def test_instructions_require_reason_for_every_search_call() -> None:
+    assert "Mỗi tool call phải có search_reason" in module.instructions
+    assert 'không được mặc định đồng nhất "mới" với "Còn hiệu lực"' in module.instructions
 
 
 def test_instructions_require_evidence_for_every_search_intent() -> None:

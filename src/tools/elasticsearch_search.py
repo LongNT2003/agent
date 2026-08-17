@@ -30,6 +30,14 @@ class LegalDocumentSearchInput(BaseModel):
         min_length=1,
         description='Từ khóa cần tìm trong title và toàn văn thuần văn bản.',
     )
+    search_reason: str = Field(
+        min_length=1,
+        description=(
+            'Lý do ngắn trước khi search: intent cần tìm, vì sao chọn Elasticsearch, '
+            'và vì sao dùng hoặc không dùng từng filter. Không nêu kết luận chưa được '
+            'kết quả tool xác nhận.'
+        ),
+    )
     ngay_ban_hanh: DateRange | None = Field(
         default=None,
         description='Lọc theo khoảng ngày ban hành.',
@@ -213,6 +221,7 @@ async def _search_legal_documents(
 
 async def search_legal_documents_func(
     query: str,
+    search_reason: str,
     ngay_ban_hanh: DateRange | None = None,
     ngay_co_hieu_luc: DateRange | None = None,
     tinh_trang_hieu_luc: str | None = None,
@@ -229,6 +238,7 @@ async def search_legal_documents_func(
     '''
     search_input = LegalDocumentSearchInput(
         query=query,
+        search_reason=search_reason,
         ngay_ban_hanh=ngay_ban_hanh,
         ngay_co_hieu_luc=ngay_co_hieu_luc,
         tinh_trang_hieu_luc=tinh_trang_hieu_luc,

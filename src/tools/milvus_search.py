@@ -19,6 +19,14 @@ class MilvusLegalSearchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query: str = Field(min_length=1, description="Nội dung pháp luật cần tìm theo ngữ nghĩa.")
+    search_reason: str = Field(
+        min_length=1,
+        description=(
+            "Lý do ngắn trước khi search: intent cần tìm, vì sao chọn Milvus, "
+            "và vì sao dùng hoặc không dùng từng filter. Không nêu kết luận chưa được "
+            "kết quả tool xác nhận."
+        ),
+    )
     tinh_trang_hieu_luc: str | None = Field(
         default=None,
         description="Lọc chính xác tình trạng hiệu lực, ví dụ: Còn hiệu lực.",
@@ -226,6 +234,7 @@ def _search_collection(
 
 async def search_law_terms_func(
     query: str,
+    search_reason: str,
     tinh_trang_hieu_luc: str | None = None,
     co_quan_ban_hanh: str | None = None,
     loai_van_ban: str | None = None,
@@ -235,6 +244,7 @@ async def search_law_terms_func(
     """Tìm định nghĩa thuật ngữ pháp luật theo ngữ nghĩa trong law_terms_CMC."""
     search_input = LawTermSearchInput(
         query=query,
+        search_reason=search_reason,
         tinh_trang_hieu_luc=tinh_trang_hieu_luc,
         co_quan_ban_hanh=co_quan_ban_hanh,
         loai_van_ban=loai_van_ban,
@@ -252,6 +262,7 @@ async def search_law_terms_func(
 async def search_law_terms_in_document_func(
     query: str,
     doc_id: int,
+    search_reason: str,
     tinh_trang_hieu_luc: str | None = None,
     co_quan_ban_hanh: str | None = None,
     loai_van_ban: str | None = None,
@@ -262,6 +273,7 @@ async def search_law_terms_in_document_func(
     search_input = LawTermInDocumentSearchInput(
         query=query,
         doc_id=doc_id,
+        search_reason=search_reason,
         tinh_trang_hieu_luc=tinh_trang_hieu_luc,
         co_quan_ban_hanh=co_quan_ban_hanh,
         loai_van_ban=loai_van_ban,
@@ -278,6 +290,7 @@ async def search_law_terms_in_document_func(
 
 async def search_law_titles_func(
     query: str,
+    search_reason: str,
     tinh_trang_hieu_luc: str | None = None,
     co_quan_ban_hanh: str | None = None,
     loai_van_ban: str | None = None,
@@ -288,6 +301,7 @@ async def search_law_titles_func(
     """Tìm văn bản pháp luật theo ngữ nghĩa tiêu đề/trích yếu trong law_title_CMC."""
     search_input = LawTitleSearchInput(
         query=query,
+        search_reason=search_reason,
         tinh_trang_hieu_luc=tinh_trang_hieu_luc,
         co_quan_ban_hanh=co_quan_ban_hanh,
         loai_van_ban=loai_van_ban,

@@ -47,6 +47,7 @@ def parse_args() -> argparse.Namespace:
 async def run_search(search_type: SearchType) -> list[dict[str, Any]]:
     common_input = {
         'query': QUERY,
+        'search_reason': 'Chạy truy vấn kiểm thử trực tiếp theo cấu hình trong script.',
         'tinh_trang_hieu_luc': TINH_TRANG_HIEU_LUC,
         'so_hieu': SO_HIEU,
         'limit': LIMIT,

@@ -20,6 +20,7 @@ from tools import (
     search_law_terms_in_document,
     search_legal_documents,
 )
+from tools.legal_filter_catalog import LEGAL_DOCUMENT_TYPES
 
 
 def _load_legal_statuses() -> list[str]:
@@ -52,6 +53,7 @@ LEGAL_STATUSES = _load_legal_statuses()
 LEGAL_BUSINESS_RULES = _load_legal_business_rules()
 CURRENT_RULE_STATUSES = ["Còn hiệu lực", "Chưa có hiệu lực", "Hết hiệu lực một phần"]
 LEGAL_STATUSES_TEXT = json.dumps(LEGAL_STATUSES, ensure_ascii=False)
+LEGAL_DOCUMENT_TYPES_TEXT = json.dumps(LEGAL_DOCUMENT_TYPES, ensure_ascii=False)
 LEGAL_BUSINESS_RULES_TEXT = json.dumps(
     LEGAL_BUSINESS_RULES,
     ensure_ascii=False,
@@ -74,7 +76,8 @@ tools = [
         """Tìm candidate văn bản pháp luật bằng BM25 trên tiêu đề và toàn văn.
 Dùng cho câu hỏi về hành vi, chế tài, điều kiện hoặc cụm từ pháp lý cụ thể. Viết lại query ngắn,
 sửa lỗi chính tả và chuyển cách nói đời thường thành thuật ngữ pháp lý. Có thể dùng các filter ngày,
-tình trạng hiệu lực, số hiệu và don_vi khi người dùng cung cấp hoặc ngữ cảnh yêu cầu. Chỉ dùng
+tình trạng hiệu lực, loại văn bản, số hiệu và don_vi khi người dùng cung cấp hoặc ngữ cảnh yêu cầu.
+Chỉ dùng
 don_vi="Trung ương" khi cần giới hạn ở văn bản cấp trung ương. Không dùng don_vi để lọc văn bản địa
 phương vì giá trị chưa được chuẩn hóa và có nhiều cách biểu diễn. Kết quả trả ID văn bản, score,
 metadata và highlight. Ở bước tìm candidate phải truyền tham số limit phù hợp với độ rộng truy vấn;
@@ -169,6 +172,10 @@ QUY TẮC SEARCH VÀ ĐÁNH GIÁ:
   trong dữ liệu là: {LEGAL_STATUSES_TEXT}.
 - Filter tình trạng là filter chính xác và có thể làm mất candidate. Nếu kết quả đã lọc không đáp ứng
   ràng buộc chính, phải thử lại không có filter tình trạng khi vẫn còn vòng search.
+- Filter loại văn bản là filter chính xác và có thể làm mất candidate. Chỉ truyền loai_van_ban khi
+  intent của người dùng yêu cầu hoặc thực sự cần giới hạn loại văn bản; không mặc định dùng filter
+  cho mọi truy vấn. Giá trị phải lấy chính xác từ danh mục hiện hành sau, có thể truyền nhiều giá trị
+  để kết hợp theo OR: {LEGAL_DOCUMENT_TYPES_TEXT}.
 - Không thêm số hiệu văn bản nếu số hiệu đó chưa có trong câu hỏi hoặc kết quả tool.
 - Với search_legal_documents, dùng don_vi="Trung ương" khi người dùng chỉ cần văn bản cấp trung ương
   như luật, nghị định, hiến pháp, thông tư. Không dùng don_vi cho yêu cầu địa phương vì dữ liệu chưa được chuẩn

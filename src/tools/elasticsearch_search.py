@@ -5,9 +5,10 @@ from urllib.parse import quote
 
 import httpx
 from langchain_core.tools import BaseTool, tool
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from core import settings
+from tools.legal_filter_catalog import validate_legal_document_types
 
 
 class DateRange(BaseModel):
@@ -55,6 +56,13 @@ class LegalDocumentSearchInput(BaseModel):
             '"Hết hiệu lực một phần"], không rút gọn còn một giá trị.'
         ),
     )
+    loai_van_ban: str | list[str] | None = Field(
+        default=None,
+        description=(
+            "Lọc chính xác theo một hoặc nhiều loại văn bản trong danh mục hiện hành. "
+            "Nhiều giá trị được kết hợp theo OR. Chỉ dùng khi intent cần giới hạn loại văn bản."
+        ),
+    )
     so_hieu: str | None = Field(
         default=None,
         description="Lọc chính xác số hiệu văn bản, ví dụ: 45/2019/QH14.",
@@ -68,6 +76,11 @@ class LegalDocumentSearchInput(BaseModel):
         ),
     )
     limit: int = Field(default=20, ge=1, le=50, description="Số văn bản tối đa trả về.")
+
+    @field_validator("loai_van_ban")
+    @classmethod
+    def validate_loai_van_ban(cls, value: str | list[str] | None) -> str | list[str] | None:
+        return validate_legal_document_types(value)
 
 
 def _date_range_filter(field: str, value: DateRange) -> dict[str, Any]:
@@ -113,6 +126,8 @@ def _build_search_body(search_input: LegalDocumentSearchInput) -> dict[str, Any]
         filters.append(
             _exact_values_filter("tinh_trang_hieu_luc", search_input.tinh_trang_hieu_luc)
         )
+    if search_input.loai_van_ban:
+        filters.append(_exact_values_filter("loai_van_ban", search_input.loai_van_ban))
     if search_input.so_hieu:
         filters.append(_exact_filter("so_hieu", search_input.so_hieu))
     if search_input.don_vi:
@@ -231,14 +246,15 @@ async def search_legal_documents_func(
     ngay_ban_hanh: DateRange | None = None,
     ngay_co_hieu_luc: DateRange | None = None,
     tinh_trang_hieu_luc: str | list[str] | None = None,
+    loai_van_ban: str | list[str] | None = None,
     so_hieu: str | None = None,
     don_vi: str | None = None,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Tìm văn bản pháp luật bằng BM25 trên tiêu đề và toàn văn.
 
-    Có thể lọc theo ngày ban hành, ngày có hiệu lực, tình trạng hiệu lực, số hiệu và
-    đơn vị ban hành. Chỉ dùng don_vi="Trung ương" để giới hạn ở văn bản cấp trung
+    Có thể lọc theo ngày ban hành, ngày có hiệu lực, tình trạng hiệu lực, loại văn bản,
+    số hiệu và đơn vị ban hành. Chỉ dùng don_vi="Trung ương" để giới hạn ở văn bản cấp trung
     ương; không dùng don_vi để lọc văn bản địa phương.
     Kết quả gồm thông tin document, metadata, cấu trúc văn bản và các đoạn khớp.
     """
@@ -248,6 +264,7 @@ async def search_legal_documents_func(
         ngay_ban_hanh=ngay_ban_hanh,
         ngay_co_hieu_luc=ngay_co_hieu_luc,
         tinh_trang_hieu_luc=tinh_trang_hieu_luc,
+        loai_van_ban=loai_van_ban,
         so_hieu=so_hieu,
         don_vi=don_vi,
         limit=limit,

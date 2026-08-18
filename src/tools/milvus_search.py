@@ -9,6 +9,7 @@ from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core import settings
+from tools.legal_filter_catalog import validate_legal_document_types
 
 _embedding_lock = Lock()
 
@@ -40,12 +41,20 @@ class MilvusLegalSearchInput(BaseModel):
         default=None,
         description="Lọc chính xác cơ quan ban hành.",
     )
-    loai_van_ban: str | None = Field(
+    loai_van_ban: str | list[str] | None = Field(
         default=None,
-        description="Lọc chính xác loại văn bản.",
+        description=(
+            "Lọc chính xác theo một hoặc nhiều loại văn bản trong danh mục hiện hành. "
+            "Nhiều giá trị được kết hợp theo OR. Chỉ dùng khi intent cần giới hạn loại văn bản."
+        ),
     )
     so_hieu: str | None = Field(default=None, description="Lọc chính xác số hiệu văn bản.")
     limit: int = Field(default=20, ge=1, le=50, description="Số kết quả tối đa trả về.")
+
+    @field_validator("loai_van_ban")
+    @classmethod
+    def validate_loai_van_ban(cls, value: str | list[str] | None) -> str | list[str] | None:
+        return validate_legal_document_types(value)
 
 
 class LawTermSearchInput(MilvusLegalSearchInput):
@@ -262,7 +271,7 @@ async def search_law_terms_func(
     search_reason: str,
     tinh_trang_hieu_luc: str | list[str] | None = None,
     co_quan_ban_hanh: str | None = None,
-    loai_van_ban: str | None = None,
+    loai_van_ban: str | list[str] | None = None,
     so_hieu: str | None = None,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
@@ -290,7 +299,7 @@ async def search_law_terms_in_document_func(
     search_reason: str,
     tinh_trang_hieu_luc: str | list[str] | None = None,
     co_quan_ban_hanh: str | None = None,
-    loai_van_ban: str | None = None,
+    loai_van_ban: str | list[str] | None = None,
     so_hieu: str | None = None,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
@@ -318,7 +327,7 @@ async def search_law_titles_func(
     search_reason: str,
     tinh_trang_hieu_luc: str | list[str] | None = None,
     co_quan_ban_hanh: str | None = None,
-    loai_van_ban: str | None = None,
+    loai_van_ban: str | list[str] | None = None,
     so_hieu: str | None = None,
     id_document: int | None = None,
     limit: int = 20,

@@ -80,6 +80,16 @@ def test_instructions_require_dynamic_limit_instead_of_fixed_value() -> None:
     assert all("limit=20" not in tool.description for tool in module.tools)
 
 
+def test_instructions_use_current_document_type_catalog_only_when_needed() -> None:
+    types_path = Path(__file__).parents[2] / "src" / "data" / "loai_van_ban.json"
+    expected_types = list(dict.fromkeys(json.loads(types_path.read_text(encoding="utf-8"))))
+
+    assert module.LEGAL_DOCUMENT_TYPES == expected_types
+    assert module.LEGAL_DOCUMENT_TYPES_TEXT in module.instructions
+    assert "Chỉ truyền loai_van_ban khi" in module.instructions
+    assert "không mặc định dùng filter" in module.instructions
+
+
 def test_instructions_require_evidence_for_every_search_intent() -> None:
     assert "tách câu hỏi" in module.instructions
     assert "mỗi tool call" in module.instructions

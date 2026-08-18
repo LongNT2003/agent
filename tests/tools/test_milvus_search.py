@@ -36,6 +36,25 @@ def test_global_term_search_supports_metadata_but_not_document_id() -> None:
         )
 
 
+def test_global_term_search_filters_multiple_document_types_with_in() -> None:
+    search_input = LawTermSearchInput(
+        query="quy định mới",
+        search_reason="Tìm trong các loại văn bản được yêu cầu.",
+        loai_van_ban=["Luật", "Bộ luật"],
+    )
+
+    assert _build_filter(search_input) == 'loai_van_ban in ["Luật", "Bộ luật"]'
+
+
+def test_global_term_search_rejects_unknown_document_type() -> None:
+    with pytest.raises(ValidationError):
+        LawTermSearchInput(
+            query="quy định mới",
+            search_reason="Kiểm tra danh mục loại văn bản.",
+            loai_van_ban="Biên bản không có trong danh mục",
+        )
+
+
 def test_milvus_search_requires_search_reason() -> None:
     schema = LawTermSearchInput.model_json_schema()
 

@@ -25,6 +25,7 @@ def test_build_search_body_uses_search_fields_and_filters():
         ngay_ban_hanh=DateRange(tu="2019-01-01", den="2024-12-31"),
         ngay_co_hieu_luc=DateRange(tu="2021-01-01"),
         tinh_trang_hieu_luc="Còn hiệu lực",
+        loai_van_ban=["Luật", "Bộ luật"],
         so_hieu="45/2019/QH14",
         don_vi="Trung ương",
         limit=5,
@@ -36,7 +37,15 @@ def test_build_search_body_uses_search_fields_and_filters():
     assert multi_match["fields"] == ["title^3", "cleaned_toan_van"]
     assert body["size"] == 5
     assert body["_source"] == {"excludes": ["toan_van", "cleaned_toan_van", "html_with_reference"]}
-    assert len(body["query"]["bool"]["filter"]) == 5
+    filters = body["query"]["bool"]["filter"]
+    assert len(filters) == 6
+    document_type_filter = filters[3]
+    assert document_type_filter["bool"]["minimum_should_match"] == 1
+    type_options = document_type_filter["bool"]["should"]
+    assert [
+        option["bool"]["should"][1]["term"]["loai_van_ban.keyword"]["value"]
+        for option in type_options
+    ] == ["Luật", "Bộ luật"]
     assert body["query"]["bool"]["filter"][-1] == {
         "bool": {
             "should": [
@@ -76,6 +85,16 @@ def test_legal_document_search_requires_search_reason():
 
     assert "search_reason" in schema["required"]
     assert "Không nêu kết luận chưa được" in schema["properties"]["search_reason"]["description"]
+
+
+@pytest.mark.parametrize("value", ["Biên bản không có trong danh mục", []])
+def test_legal_document_search_rejects_unknown_or_empty_document_types(value):
+    with pytest.raises(ValidationError):
+        LegalDocumentSearchInput(
+            query="luật ban hành",
+            search_reason="Kiểm tra danh mục loại văn bản.",
+            loai_van_ban=value,
+        )
 
 
 def test_format_hits_returns_document_info_metadata_and_structure():

@@ -124,7 +124,7 @@ async def run_query_with_debug(agent: Any, query: str, config: dict[str, Any]) -
                 continue
             if message.tool_calls:
                 if loop:
-                    print(f"[decision] Chưa đủ bằng chứng, tiếp tục search loop {loop + 1}.")
+                    print(f"[decision] Tiếp tục search loop {loop + 1}.")
                 loop += 1
                 print_tool_calls(message, loop)
             else:

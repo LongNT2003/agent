@@ -6,9 +6,10 @@ from threading import Lock
 from typing import Any, Literal
 
 from langchain_core.tools import BaseTool, tool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core import settings
+from tools.legal_filter_catalog import validate_legal_document_types
 
 _embedding_lock = Lock()
 
@@ -19,20 +20,41 @@ class MilvusLegalSearchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query: str = Field(min_length=1, description="Nội dung pháp luật cần tìm theo ngữ nghĩa.")
-    tinh_trang_hieu_luc: str | None = Field(
+    search_reason: str = Field(
+        min_length=1,
+        description=(
+            "Lý do ngắn trước khi search: intent cần tìm, vì sao chọn Milvus, "
+            "và vì sao dùng hoặc không dùng từng filter. Không nêu kết luận chưa được "
+            "kết quả tool xác nhận."
+        ),
+    )
+    tinh_trang_hieu_luc: str | list[str] | None = Field(
         default=None,
-        description="Lọc chính xác tình trạng hiệu lực, ví dụ: Còn hiệu lực.",
+        description=(
+            "Lọc chính xác theo một hoặc nhiều tình trạng hiệu lực. Nhiều giá trị "
+            "được kết hợp theo OR. Với câu hỏi tình huống hoặc quy tắc hiện hành, "
+            'phải truyền đủ ["Còn hiệu lực", "Chưa có hiệu lực", '
+            '"Hết hiệu lực một phần"], không rút gọn còn một giá trị.'
+        ),
     )
     co_quan_ban_hanh: str | None = Field(
         default=None,
         description="Lọc chính xác cơ quan ban hành.",
     )
-    loai_van_ban: str | None = Field(
+    loai_van_ban: str | list[str] | None = Field(
         default=None,
-        description="Lọc chính xác loại văn bản.",
+        description=(
+            "Lọc chính xác theo một hoặc nhiều loại văn bản trong danh mục hiện hành. "
+            "Nhiều giá trị được kết hợp theo OR. Chỉ dùng khi intent cần giới hạn loại văn bản."
+        ),
     )
     so_hieu: str | None = Field(default=None, description="Lọc chính xác số hiệu văn bản.")
-    limit: int = Field(default=10, ge=1, le=50, description="Số kết quả tối đa trả về.")
+    limit: int = Field(default=20, ge=1, le=50, description="Số kết quả tối đa trả về.")
+
+    @field_validator("loai_van_ban")
+    @classmethod
+    def validate_loai_van_ban(cls, value: str | list[str] | None) -> str | list[str] | None:
+        return validate_legal_document_types(value)
 
 
 class LawTermSearchInput(MilvusLegalSearchInput):
@@ -40,9 +62,21 @@ class LawTermSearchInput(MilvusLegalSearchInput):
 
 
 class LawTermInDocumentSearchInput(MilvusLegalSearchInput):
-    """Input for searching legal terms inside a known candidate document."""
+    """Input for searching legal terms inside one or more known candidate documents."""
 
-    doc_id: int = Field(description="ID văn bản ứng viên đã tìm thấy ở bước trước.")
+    doc_id: int | list[int] = Field(
+        description=(
+            "Một ID hoặc danh sách ID văn bản ứng viên đã tìm thấy ở bước trước. "
+            "Nhiều ID được kết hợp theo OR (Milvus IN)."
+        )
+    )
+
+    @field_validator("doc_id")
+    @classmethod
+    def validate_doc_ids(cls, value: int | list[int]) -> int | list[int]:
+        if isinstance(value, list) and not 1 <= len(value) <= 10:
+            raise ValueError("Danh sách doc_id phải chứa từ 1 đến 10 ID.")
+        return value
 
 
 class LawTitleSearchInput(MilvusLegalSearchInput):
@@ -127,10 +161,18 @@ def _build_filter(search_input: MilvusLegalSearchInput) -> str | None:
     for field in ("tinh_trang_hieu_luc", "co_quan_ban_hanh", "loai_van_ban", "so_hieu"):
         value = getattr(search_input, field)
         if value:
-            expressions.append(f'{field} == "{_escape_filter_value(value)}"')
+            if isinstance(value, list):
+                encoded_values = ", ".join(f'"{_escape_filter_value(item)}"' for item in value)
+                expressions.append(f"{field} in [{encoded_values}]")
+            else:
+                expressions.append(f'{field} == "{_escape_filter_value(value)}"')
 
     if isinstance(search_input, LawTermInDocumentSearchInput):
-        expressions.append(f"doc_id == {search_input.doc_id}")
+        if isinstance(search_input.doc_id, list):
+            encoded_ids = ", ".join(str(doc_id) for doc_id in search_input.doc_id)
+            expressions.append(f"doc_id in [{encoded_ids}]")
+        else:
+            expressions.append(f"doc_id == {search_input.doc_id}")
     if isinstance(search_input, LawTitleSearchInput) and search_input.id_document is not None:
         expressions.append(f"id_document == {search_input.id_document}")
     return " and ".join(expressions) or None
@@ -226,15 +268,17 @@ def _search_collection(
 
 async def search_law_terms_func(
     query: str,
-    tinh_trang_hieu_luc: str | None = None,
+    search_reason: str,
+    tinh_trang_hieu_luc: str | list[str] | None = None,
     co_quan_ban_hanh: str | None = None,
-    loai_van_ban: str | None = None,
+    loai_van_ban: str | list[str] | None = None,
     so_hieu: str | None = None,
-    limit: int = 10,
+    limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Tìm định nghĩa thuật ngữ pháp luật theo ngữ nghĩa trong law_terms_CMC."""
     search_input = LawTermSearchInput(
         query=query,
+        search_reason=search_reason,
         tinh_trang_hieu_luc=tinh_trang_hieu_luc,
         co_quan_ban_hanh=co_quan_ban_hanh,
         loai_van_ban=loai_van_ban,
@@ -251,17 +295,19 @@ async def search_law_terms_func(
 
 async def search_law_terms_in_document_func(
     query: str,
-    doc_id: int,
-    tinh_trang_hieu_luc: str | None = None,
+    doc_id: int | list[int],
+    search_reason: str,
+    tinh_trang_hieu_luc: str | list[str] | None = None,
     co_quan_ban_hanh: str | None = None,
-    loai_van_ban: str | None = None,
+    loai_van_ban: str | list[str] | None = None,
     so_hieu: str | None = None,
-    limit: int = 10,
+    limit: int = 20,
 ) -> list[dict[str, Any]]:
-    """Tìm điều, khoản trong một văn bản ứng viên đã biết ID."""
+    """Tìm điều, khoản trong một hoặc nhiều văn bản ứng viên đã biết ID."""
     search_input = LawTermInDocumentSearchInput(
         query=query,
         doc_id=doc_id,
+        search_reason=search_reason,
         tinh_trang_hieu_luc=tinh_trang_hieu_luc,
         co_quan_ban_hanh=co_quan_ban_hanh,
         loai_van_ban=loai_van_ban,
@@ -278,16 +324,18 @@ async def search_law_terms_in_document_func(
 
 async def search_law_titles_func(
     query: str,
-    tinh_trang_hieu_luc: str | None = None,
+    search_reason: str,
+    tinh_trang_hieu_luc: str | list[str] | None = None,
     co_quan_ban_hanh: str | None = None,
-    loai_van_ban: str | None = None,
+    loai_van_ban: str | list[str] | None = None,
     so_hieu: str | None = None,
     id_document: int | None = None,
-    limit: int = 10,
+    limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Tìm văn bản pháp luật theo ngữ nghĩa tiêu đề/trích yếu trong law_title_CMC."""
     search_input = LawTitleSearchInput(
         query=query,
+        search_reason=search_reason,
         tinh_trang_hieu_luc=tinh_trang_hieu_luc,
         co_quan_ban_hanh=co_quan_ban_hanh,
         loai_van_ban=loai_van_ban,

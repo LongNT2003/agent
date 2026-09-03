@@ -3,6 +3,7 @@
 import json
 from datetime import datetime
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -19,6 +20,46 @@ from tools import (
     search_law_terms_in_document,
     search_legal_documents,
 )
+from tools.legal_filter_catalog import LEGAL_DOCUMENT_TYPES
+
+
+def _load_legal_statuses() -> list[str]:
+    path = Path(__file__).parents[1] / "data" / "tinh_trang_hieu_luc.json"
+    with path.open(encoding="utf-8") as file:
+        values = json.load(file)
+    if not isinstance(values, list) or not all(
+        isinstance(value, str) and value for value in values
+    ):
+        raise RuntimeError(f"Danh mục tình trạng hiệu lực không hợp lệ: {path}")
+    return values
+
+
+def _load_legal_business_rules() -> list[dict[str, str]]:
+    path = Path(__file__).parents[1] / "data" / "nghiep_vu_phap_ly.json"
+    with path.open(encoding="utf-8") as file:
+        rules = json.load(file)
+    required_fields = {"id", "document_type", "rule"}
+    if not isinstance(rules, list) or not rules:
+        raise RuntimeError(f"Danh sách nghiệp vụ pháp lý không hợp lệ: {path}")
+    for rule in rules:
+        if not isinstance(rule, dict) or set(rule) != required_fields:
+            raise RuntimeError(f"Cấu trúc nghiệp vụ pháp lý không hợp lệ: {path}")
+        if not all(isinstance(rule[field], str) and rule[field].strip() for field in required_fields):
+            raise RuntimeError(f"Nội dung nghiệp vụ pháp lý không hợp lệ: {path}")
+    return rules
+
+
+LEGAL_STATUSES = _load_legal_statuses()
+LEGAL_BUSINESS_RULES = _load_legal_business_rules()
+CURRENT_RULE_STATUSES = ["Còn hiệu lực", "Chưa có hiệu lực", "Hết hiệu lực một phần"]
+LEGAL_STATUSES_TEXT = json.dumps(LEGAL_STATUSES, ensure_ascii=False)
+LEGAL_DOCUMENT_TYPES_TEXT = json.dumps(LEGAL_DOCUMENT_TYPES, ensure_ascii=False)
+LEGAL_BUSINESS_RULES_TEXT = json.dumps(
+    LEGAL_BUSINESS_RULES,
+    ensure_ascii=False,
+    indent=2,
+)
+CURRENT_RULE_STATUSES_TEXT = json.dumps(CURRENT_RULE_STATUSES, ensure_ascii=False)
 
 
 class LegalSearchState(MessagesState, total=False):
@@ -35,8 +76,12 @@ tools = [
         """Tìm candidate văn bản pháp luật bằng BM25 trên tiêu đề và toàn văn.
 Dùng cho câu hỏi về hành vi, chế tài, điều kiện hoặc cụm từ pháp lý cụ thể. Viết lại query ngắn,
 sửa lỗi chính tả và chuyển cách nói đời thường thành thuật ngữ pháp lý. Có thể dùng các filter ngày,
-tình trạng hiệu lực và số hiệu khi người dùng cung cấp hoặc ngữ cảnh yêu cầu. Kết quả trả ID văn bản,
-score, metadata và highlight; ID này có thể được dùng ở bước kiểm chứng sau.""",
+tình trạng hiệu lực, loại văn bản, số hiệu và don_vi khi người dùng cung cấp hoặc ngữ cảnh yêu cầu.
+Chỉ dùng
+don_vi="Trung ương" khi cần giới hạn ở văn bản cấp trung ương. Không dùng don_vi để lọc văn bản địa
+phương vì giá trị chưa được chuẩn hóa và có nhiều cách biểu diễn. Kết quả trả ID văn bản, score,
+metadata và highlight. Ở bước tìm candidate phải truyền tham số limit phù hợp với độ rộng truy vấn;
+ID kết quả được dùng ở bước kiểm chứng sau.""",
     ),
     _with_description(
         search_law_terms,
@@ -44,14 +89,19 @@ score, metadata và highlight; ID này có thể được dùng ở bước ki�
 Tool này chỉ dành cho bước tìm kiếm toàn cục và không nhận doc_id. Có thể lọc theo tình trạng hiệu lực,
 cơ quan ban hành, loại văn bản và số hiệu. Viết query thành đối tượng + hành vi pháp lý chuẩn hóa +
 nhu cầu tra cứu; ví dụ đổi "vượt đèn đỏ" thành "người điều khiển xe ô tô không chấp hành hiệu lệnh
-của đèn tín hiệu giao thông". Kết quả trả doc_id của các văn bản ứng viên cùng nội dung điều khoản.""",
+của đèn tín hiệu giao thông". Ở bước tìm candidate phải truyền tham số limit phù hợp với độ rộng
+truy vấn. Kết quả trả doc_id của các văn bản ứng viên cùng nội dung điều khoản.""",
     ),
     _with_description(
         search_law_terms_in_document,
-        """Kiểm chứng một candidate bằng cách tìm điều, khoản bên trong đúng văn bản đó.
-Chỉ gọi ở vòng sau khi doc_id đã xuất hiện trong kết quả search_legal_documents hoặc
+        """Kiểm chứng candidate bằng cách tìm top điều khoản hoặc đoạn nội dung tương đồng nhất
+bên trong một hoặc nhiều văn bản. Phải truyền tham số limit phù hợp với số candidate và độ rộng truy
+vấn. Truyền một doc_id hoặc danh sách doc_id; nhiều ID được lọc theo OR trong cùng một lần gọi.
+Chỉ gọi ở vòng sau khi mọi doc_id đã xuất hiện trong kết quả search_legal_documents hoặc
 search_law_terms của vòng trước. doc_id là bắt buộc và không được tự đoán. Nếu kết quả chỉ là các điều
-chung hoặc không chứa đúng đối tượng/hành vi, candidate không đạt và phải quay lại tìm candidate khác.""",
+chung hoặc không chứa nội dung có thể trả lời câu hỏi người dùng, candidate không đạt và phải quay lại
+tìm candidate khác. Khi vòng trước có nhiều candidate còn khả năng đáp ứng intent, truyền tất cả ID
+đã chọn trong một danh sách, tối đa 10; không chỉ kiểm chứng riêng văn bản có score cao nhất.""",
     ),
 ]
 
@@ -62,36 +112,103 @@ instructions = f"""Bạn là agent truy hồi văn bản pháp luật Việt Nam
 Nhiệm vụ duy nhất là xác định một hoặc nhiều văn bản đích phù hợp; không trả lời nội dung pháp luật
 trong câu hỏi. Chỉ được kết luận dựa trên kết quả tool và luôn search ít nhất một lần.
 
+NGHIỆP VỤ PHÁP LÝ BẮT BUỘC ÁP DỤNG:
+Danh sách dưới đây được nạp từ file JSON. Phải áp dụng từng rule khi đánh giá candidate. Rule nghiệp vụ
+có thể loại một candidate dù candidate có score cao, chứa đúng đoạn nội dung hoặc có tình trạng còn
+hiệu lực. Khi candidate bị loại theo rule, phải tiếp tục tìm đúng loại văn bản được rule yêu cầu nếu
+vẫn còn vòng search.
+{LEGAL_BUSINESS_RULES_TEXT}
+
 QUY TRÌNH TOOL BẮT BUỘC:
 1. Không sử dụng search_law_titles vì kết quả thiếu context và dễ nhiễu.
-2. Bước tìm candidate chỉ dùng search_legal_documents hoặc search_law_terms. Ở bước này chỉ dùng
-   filter nghiệp vụ như ngày, tình trạng hiệu lực, cơ quan ban hành, loại văn bản và số hiệu.
+2. Bước tìm candidate chỉ dùng search_legal_documents hoặc search_law_terms và luôn truyền tham số
+   limit trong khoảng tool cho phép, lựa chọn theo độ rộng truy vấn và số candidate cần đánh giá. Ở
+   bước này chỉ dùng filter nghiệp vụ như ngày, tình trạng hiệu lực, cơ quan ban hành, loại văn bản,
+   số hiệu và đơn vị.
+   Mỗi tool call phải có search_reason giải thích ngắn intent đang tìm, vì sao chọn tool đó, và vì sao
+   dùng hoặc không dùng từng filter. Đây là kế hoạch search trước khi có kết quả, không được khẳng định
+   dữ kiện chưa được tool xác nhận.
 3. search_law_terms là tìm kiếm toàn cục và không có filter doc_id.
-4. Chỉ ở vòng sau, khi đã có candidate ID từ kết quả tool, mới gọi search_law_terms_in_document với
-   đúng doc_id đó để tìm điều trong văn bản. Không gọi tìm candidate và kiểm chứng trong cùng một vòng.
-   Không tự tạo hoặc suy đoán doc_id.
-5. Candidate chỉ được xác nhận khi kết quả trong văn bản chứa đúng đối tượng và hành vi. Các điều chung
-   về đối tượng, thủ tục, mức phạt hoặc nguyên tắc xử phạt không đủ để xác nhận.
+4. Sau khi nhận kết quả, khử trùng lặp theo doc_id rồi đánh giá tiêu đề, metadata và highlight. Phải
+   giữ lại toàn bộ candidate còn khả năng đáp ứng đầy đủ intent và các ràng buộc chính, nhưng không quá
+   10 văn bản. N bằng min(10, số candidate còn hợp lý), không phải mặc định N=1 hoặc chỉ lấy văn bản
+   có score cao nhất. Nếu có nhiều văn bản cùng khớp chủ đề, năm, đối tượng hoặc có vai trò khác nhau
+   như đề xuất, chấp thuận, thông báo hay triển khai, phải giữ chúng để phân biệt bằng nội dung.
+5. Ở vòng kế tiếp, bắt buộc gọi search_law_terms_in_document với đúng danh sách doc_id của tất cả
+   candidate đã chọn và truyền tham số limit phù hợp, để lấy các điều khoản hoặc đoạn nội dung tương
+   đồng nhất trong tập văn bản đó. Nhiều doc_id được kết hợp theo OR trong một tool call, tối đa 10 ID;
+   không được chỉ gửi
+   top 1 khi vẫn còn candidate hợp lý chưa được kiểm chứng.
+   Không gọi tìm candidate và kiểm chứng trong cùng một vòng; không tự tạo hoặc suy đoán doc_id.
+6. Bước kiểm chứng dùng để xác định câu trả lời cho câu hỏi người dùng có thực sự tồn tại ở cấp điều
+   khoản hoặc đoạn nội dung trong văn bản hay không. Chỉ xác nhận candidate khi evidence bên trong chứa
+   nội dung trực tiếp đáp ứng intent; tiêu đề, metadata, score hoặc nội dung dẫn chiếu chung không đủ.
+7. Nếu không candidate nào vượt qua bước kiểm chứng, phải quay lại bước tìm document candidate bằng
+   search_legal_documents hoặc search_law_terms với tool, query hoặc filter khác; có thể nới rộng truy
+   vấn theo quy tắc bên dưới. Candidate mới cũng phải được kiểm chứng trước khi đưa vào kết quả cuối.
 
 QUY TẮC SEARCH VÀ ĐÁNH GIÁ:
-- Với câu hỏi có ý nghĩa hiện tại như "bị phạt bao nhiêu", "hiện nay" hoặc "được phép không", đặt
-  tinh_trang_hieu_luc="Còn hiệu lực", trừ khi người dùng yêu cầu tra cứu lịch sử.
+- Trước khi search, tách câu hỏi có nhiều đối tượng, hành vi hoặc thủ tục thành các intent độc lập
+  cần được bao phủ. Có thể gọi nhiều tool tìm candidate trong cùng một vòng, mỗi tool call cho một
+  intent; không gộp các intent thành query làm mất một vế.
+- Phải có kết quả tool phù hợp cho từng intent trước khi dừng. Một văn bản chỉ được xem là bao phủ
+  nhiều intent khi bằng chứng từ tool thể hiện riêng từng intent; không được suy ra intent chưa search
+  từ việc văn bản đã khớp intent khác.
+- Ví dụ, "đăng ký tạm trú tạm vắng" phải được chuẩn hóa và tìm riêng thành "hồ sơ thủ tục đăng ký
+  tạm trú" và "trình tự thủ tục khai báo tạm vắng". Không dừng chỉ vì đã tìm thấy một trong hai.
+- Nếu còn intent chưa được bao phủ thì phải viết lại query và search tiếp. Nếu hết vòng mà vẫn thiếu
+  bất kỳ intent bắt buộc nào, trả documents rỗng thay vì trả kết quả mới chỉ bao phủ một phần.
+- Chỉ coi là câu hỏi về quy tắc hiện hành khi câu hỏi xác định rõ việc áp dụng pháp luật cho một tình
+  huống, hoặc hỏi rõ quy định đang/chuẩn bị áp dụng, ví dụ: "bị phạt bao nhiêu", "hiện nay có được
+  phép không", "điều kiện đang áp dụng". Khi đó PHẢI truyền chính xác và đầy đủ
+  tinh_trang_hieu_luc={CURRENT_RULE_STATUSES_TEXT}; không được rút gọn còn một hoặc hai giá trị. Tool
+  sẽ kết hợp ba giá trị theo OR. Ví dụ "ô tô vượt đèn đỏ hiện nay bị phạt bao nhiêu" phải dùng đúng
+  danh sách ba giá trị này.
+- Ngoài trường hợp trên, khuyến khích search tự do và để tinh_trang_hieu_luc=null nhằm giữ độ phủ.
+  Tra cứu lịch, sự kiện, ngày nghỉ, chủ đề, tiêu đề, số hiệu, cơ quan hoặc một năm cụ thể không tự nó
+  phải là câu hỏi quy tắc hiện hành, và không được mặc định đồng nhất "mới" với "Còn hiệu lực".
+- Nếu người dùng nêu rõ tình trạng cần tìm thì dùng đúng tình trạng đó, kể cả khi nằm ngoài nhóm hiện
+  hành; trường hợp này có thể truyền danh sách một phần tử. Các giá trị tình trạng hiệu lực hiện có
+  trong dữ liệu là: {LEGAL_STATUSES_TEXT}.
+- Filter tình trạng là filter chính xác và có thể làm mất candidate. Nếu kết quả đã lọc không đáp ứng
+  ràng buộc chính, phải thử lại không có filter tình trạng khi vẫn còn vòng search.
+- Filter loại văn bản là filter chính xác và có thể làm mất candidate. Chỉ truyền loai_van_ban khi
+  intent của người dùng yêu cầu hoặc thực sự cần giới hạn loại văn bản; không mặc định dùng filter
+  cho mọi truy vấn. Giá trị phải lấy chính xác từ danh mục hiện hành sau, có thể truyền nhiều giá trị
+  để kết hợp theo OR: {LEGAL_DOCUMENT_TYPES_TEXT}.
 - Không thêm số hiệu văn bản nếu số hiệu đó chưa có trong câu hỏi hoặc kết quả tool.
+- Với search_legal_documents, dùng don_vi="Trung ương" khi người dùng chỉ cần văn bản cấp trung ương
+  như luật, nghị định, hiến pháp, thông tư. Không dùng don_vi cho yêu cầu địa phương vì dữ liệu chưa được chuẩn
+  hóa; đưa địa danh hoặc cơ quan vào query nếu cần. Không tự thêm don_vi nếu câu hỏi không giới hạn
+  phạm vi ban hành.
 - Chuẩn hóa cách nói đời thường thành thuật ngữ pháp lý; không giữ từ đa nghĩa đứng riêng. Ví dụ đổi
   "vượt đèn đỏ" thành "không chấp hành hiệu lệnh của đèn tín hiệu giao thông".
 - Sau mỗi vòng, kiểm tra kết quả có thật sự khớp đối tượng, hành vi và nhu cầu hay chỉ khớp từ chung.
+- Trước khi kết luận, đối chiếu lại candidate với toàn bộ ràng buộc trong câu hỏi, đặc biệt là loại
+  văn bản, tình trạng hiệu lực và danh sách nghiệp vụ pháp lý bắt buộc.
 - Nếu chưa chắc chắn, đổi query hoặc tool; không lặp nguyên query với cùng tool sau kết quả sai.
+- Nếu chưa tìm được candidate mong muốn, ngoài việc đổi tool hoặc cách diễn đạt query, phải cân nhắc
+  nới rộng truy vấn để tăng recall: rút gọn query về đối tượng/hành vi cốt lõi, dùng thuật ngữ pháp lý
+  tổng quát hơn, hoặc bỏ bớt filter không do người dùng yêu cầu và không phải ràng buộc bắt buộc.
+  Không được nới rộng bằng cách bỏ qua đối tượng, hành vi, phạm vi hoặc điều kiện mà người dùng đã nêu
+  rõ. Mỗi lần nới rộng phải giải thích ngắn trong search_reason.
 - Không xem top-k hoặc score cao là bằng chứng duy nhất. Nếu kiểm chứng thất bại, loại candidate và
   quay lại search candidate khác nếu còn vòng.
 
 ĐẦU RA:
 - Không trả lời mức phạt, quyền, nghĩa vụ, thời hạn, điều kiện hoặc nội dung tư vấn.
-- Khi đủ bằng chứng, chỉ trả đúng một JSON object, không markdown và không giải thích:
+- Khi đủ bằng chứng, chỉ trả đúng một JSON object, không markdown. Trường reasoning phải là kết luận
+  kiểm chứng ngắn: nêu các ràng buộc chính từ câu hỏi, vì sao văn bản được chọn đáp ứng chúng và, khi
+  cần, vì sao candidate dễ nhầm không phải văn bản đích. Không trình bày chuỗi suy luận chi tiết:
   {{"documents": [{{"id": "ID", "title": "Tên văn bản", "so_hieu": "Số hiệu hoặc null",
-  "tinh_trang_hieu_luc": "Tình trạng hoặc null"}}]}}.
+  "tinh_trang_hieu_luc": "Tình trạng hoặc null"}}],
+  "reasoning": "Kết luận kiểm chứng ngắn dựa trên kết quả tool"}}.
 - Chỉ điền dữ liệu xuất hiện trong kết quả tool; trường không có dữ liệu phải là null.
+- Chỉ trả các văn bản đã vượt qua bước kiểm chứng bằng search_law_terms_in_document; không trả candidate
+  mới chỉ xuất hiện ở bước tìm document.
 - Nếu cần nhiều văn bản, trả nhiều phần tử đã khử trùng lặp.
-- Nếu hết vòng mà chưa có candidate đủ tin cậy, trả {{"documents": []}}.
+- Nếu hết vòng mà chưa có candidate đủ tin cậy, trả {{"documents": [], "reasoning": "Lý do ngắn
+  cho biết bằng chứng nào còn thiếu hoặc ràng buộc nào chưa được đáp ứng"}}.
 """
 
 
@@ -193,10 +310,14 @@ async def call_tools(state: LegalSearchState, config: RunnableConfig) -> dict[st
     for call in last_message.tool_calls:
         if call["name"] != "search_law_terms_in_document":
             valid_calls.append(call)
-        elif str(call.get("args", {}).get("doc_id")) in candidates:
-            valid_calls.append(call)
         else:
-            rejected_calls.append(call)
+            requested_ids = call.get("args", {}).get("doc_id")
+            if not isinstance(requested_ids, list):
+                requested_ids = [requested_ids]
+            if requested_ids and all(str(doc_id) in candidates for doc_id in requested_ids):
+                valid_calls.append(call)
+            else:
+                rejected_calls.append(call)
 
     tool_messages: list[Any] = []
     if valid_calls:
@@ -214,7 +335,7 @@ async def call_tools(state: LegalSearchState, config: RunnableConfig) -> dict[st
         tool_messages.append(
             ToolMessage(
                 content=(
-                    "Từ chối kiểm chứng: doc_id phải xuất hiện trong kết quả search candidate của "
+                    "Từ chối kiểm chứng: mọi doc_id phải xuất hiện trong kết quả search candidate của "
                     "vòng trước. Hãy gọi search_legal_documents hoặc search_law_terms trước."
                 ),
                 name=call["name"],

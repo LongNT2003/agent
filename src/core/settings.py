@@ -124,7 +124,7 @@ class Settings(BaseSettings):
     MILVUS_EMBEDDING_MODEL: str = "CATI-AI/Qwen3-Embedding-0.6B-vietnamese-legal-v2"
     MILVUS_EMBEDDING_DEVICE: str = "cpu"
     MILVUS_SEARCH_NPROBE: int = 16
-    LEGAL_SEARCH_MAX_LOOPS: int = Field(default=3, ge=1, le=10)
+    LEGAL_SEARCH_MAX_LOOPS: int = Field(default=5, ge=1, le=10)
     MCP_GITHUB_SERVER_URL: str = "https://api.githubcopilot.com/mcp/"
 
     LANGCHAIN_TRACING_V2: bool = False

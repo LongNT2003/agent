@@ -18,6 +18,7 @@ from tools.milvus_search import (
 def test_global_term_search_supports_metadata_but_not_document_id() -> None:
     search_input = LawTermSearchInput(
         query="người lao động",
+        search_reason="Tìm điều khoản theo ngữ nghĩa với các filter được chỉ định.",
         tinh_trang_hieu_luc="Còn hiệu lực",
         so_hieu="45/2019/QH14",
     )
@@ -28,20 +29,79 @@ def test_global_term_search_supports_metadata_but_not_document_id() -> None:
     assert "doc_id" not in search_law_terms.args
 
     with pytest.raises(ValidationError):
-        LawTermSearchInput(query="người lao động", doc_id=123)
+        LawTermSearchInput(
+            query="người lao động",
+            search_reason="Kiểm tra schema không nhận doc_id.",
+            doc_id=123,
+        )
+
+
+def test_global_term_search_filters_multiple_document_types_with_in() -> None:
+    search_input = LawTermSearchInput(
+        query="quy định mới",
+        search_reason="Tìm trong các loại văn bản được yêu cầu.",
+        loai_van_ban=["Luật", "Bộ luật"],
+    )
+
+    assert _build_filter(search_input) == 'loai_van_ban in ["Luật", "Bộ luật"]'
+
+
+def test_global_term_search_rejects_unknown_document_type() -> None:
+    with pytest.raises(ValidationError):
+        LawTermSearchInput(
+            query="quy định mới",
+            search_reason="Kiểm tra danh mục loại văn bản.",
+            loai_van_ban="Biên bản không có trong danh mục",
+        )
+
+
+def test_milvus_search_requires_search_reason() -> None:
+    schema = LawTermSearchInput.model_json_schema()
+
+    assert "search_reason" in schema["required"]
+    assert "Không nêu kết luận chưa được" in schema["properties"]["search_reason"]["description"]
 
 
 def test_document_term_search_requires_and_filters_document_id() -> None:
-    search_input = LawTermInDocumentSearchInput(query="người lao động", doc_id=123)
+    search_input = LawTermInDocumentSearchInput(
+        query="người lao động",
+        doc_id=123,
+        search_reason="Kiểm chứng điều khoản trong candidate đã biết.",
+    )
 
     assert _build_filter(search_input) == "doc_id == 123"
     assert "default" not in search_law_terms_in_document.args["doc_id"]
 
 
+def test_document_term_search_filters_multiple_document_ids_with_in() -> None:
+    search_input = LawTermInDocumentSearchInput(
+        query="người lao động",
+        doc_id=[123, 456, 789],
+        search_reason="Kiểm chứng điều khoản trong nhiều candidate đã biết.",
+    )
+
+    assert _build_filter(search_input) == "doc_id in [123, 456, 789]"
+
+
+@pytest.mark.parametrize("doc_ids", [[], list(range(11))])
+def test_document_term_search_rejects_invalid_document_id_list_size(doc_ids: list[int]) -> None:
+    with pytest.raises(ValidationError):
+        LawTermInDocumentSearchInput(
+            query="người lao động",
+            doc_id=doc_ids,
+            search_reason="Kiểm chứng danh sách candidate.",
+        )
+
+
 def test_search_collection_uses_cosine_vector_search_and_filter() -> None:
     client = Mock()
     client.search.return_value = [[]]
-    search_input = LawTitleSearchInput(query="thuế thu nhập", id_document=456, limit=5)
+    search_input = LawTitleSearchInput(
+        query="thuế thu nhập",
+        search_reason="Kiểm thử tìm tiêu đề theo ngữ nghĩa.",
+        id_document=456,
+        limit=5,
+    )
 
     with (
         patch("tools.milvus_search._load_collection"),

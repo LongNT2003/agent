@@ -30,6 +30,8 @@ def test_tool_descriptions_define_staged_search() -> None:
     assert "không nhận doc_id" in descriptions["search_law_terms"]
     assert "vòng sau" in descriptions["search_law_terms_in_document"]
     assert "không được tự đoán" in descriptions["search_law_terms_in_document"]
+    assert "search_reason" in module.tools[0].args
+    assert "default" not in module.tools[0].args["search_reason"]
 
 
 def test_instructions_disable_title_and_require_retrieval_only_output() -> None:
@@ -38,6 +40,65 @@ def test_instructions_disable_title_and_require_retrieval_only_output() -> None:
     assert "không có filter doc_id" in module.instructions
     assert "Không gọi tìm candidate và kiểm chứng trong cùng một vòng" in module.instructions
     assert '{"documents": [' in module.instructions
+    assert '"reasoning": "Kết luận kiểm chứng ngắn' in module.instructions
+
+
+def test_instructions_require_final_candidate_reasoning() -> None:
+    assert "đối chiếu lại candidate với toàn bộ ràng buộc" in module.instructions
+    assert "Không trình bày chuỗi suy luận chi tiết" in module.instructions
+
+
+def test_instructions_import_legal_business_rules_from_json() -> None:
+    rules_path = Path(__file__).parents[2] / "src" / "data" / "nghiep_vu_phap_ly.json"
+    rules = json.loads(rules_path.read_text(encoding="utf-8"))
+
+    assert module.LEGAL_BUSINESS_RULES == rules
+    assert len(rules) == 2
+    assert {rule["id"] for rule in rules} == {"van_ban_hop_nhat", "cong_van_chap_thuan"}
+    assert all(rule["rule"] in module.instructions for rule in rules)
+    assert "Rule nghiệp vụ\ncó thể loại một candidate dù candidate có score cao" in module.instructions
+
+
+def test_legal_business_rules_distinguish_reference_and_normative_documents() -> None:
+    rules = {rule["id"]: rule["rule"] for rule in module.LEGAL_BUSINESS_RULES}
+
+    assert "không được chọn làm văn bản đích" in rules["van_ban_hop_nhat"]
+    assert "văn bản quy phạm pháp luật gốc" in rules["van_ban_hop_nhat"]
+    assert "không phải văn bản quy phạm pháp luật" in rules["cong_van_chap_thuan"]
+    assert "Chỉ chọn công văn khi intent" in rules["cong_van_chap_thuan"]
+
+
+def test_instructions_require_reason_for_every_search_call() -> None:
+    assert "Mỗi tool call phải có search_reason" in module.instructions
+    assert 'không được mặc định đồng nhất "mới" với "Còn hiệu lực"' in module.instructions
+
+
+def test_instructions_require_dynamic_limit_instead_of_fixed_value() -> None:
+    assert "luôn truyền tham số\n   limit" in module.instructions
+    assert "truyền tham số limit phù hợp" in module.instructions
+    assert "limit=20" not in module.instructions
+    assert all("limit=20" not in tool.description for tool in module.tools)
+
+
+def test_instructions_use_current_document_type_catalog_only_when_needed() -> None:
+    types_path = Path(__file__).parents[2] / "src" / "data" / "loai_van_ban.json"
+    expected_types = list(dict.fromkeys(json.loads(types_path.read_text(encoding="utf-8"))))
+
+    assert module.LEGAL_DOCUMENT_TYPES == expected_types
+    assert module.LEGAL_DOCUMENT_TYPES_TEXT in module.instructions
+    assert "Chỉ truyền loai_van_ban khi" in module.instructions
+    assert "không mặc định dùng filter" in module.instructions
+
+
+def test_instructions_require_evidence_for_every_search_intent() -> None:
+    assert "tách câu hỏi" in module.instructions
+    assert "mỗi tool call" in module.instructions
+    assert "cho một\n  intent" in module.instructions
+    assert "Phải có kết quả tool phù hợp cho từng intent trước khi dừng" in module.instructions
+    assert "hồ sơ thủ tục đăng ký" in module.instructions
+    assert 'tạm trú" và' in module.instructions
+    assert "trình tự thủ tục khai báo tạm vắng" in module.instructions
+    assert "documents rỗng" in module.instructions
 
 
 def test_known_candidate_ids_reads_es_and_global_term_results() -> None:
@@ -117,6 +178,76 @@ async def test_call_tools_accepts_candidate_from_previous_result(
     )
 
     tool_node_call.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_call_tools_accepts_multiple_candidates_from_previous_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool_node_call = AsyncMock(return_value={"messages": []})
+    monkeypatch.setattr(module.tool_node, "ainvoke", tool_node_call)
+    candidate_result = ToolMessage(
+        content=json.dumps([{"doc_info": {"id": "173920"}}, {"doc_id": 170620}]),
+        name="search_law_terms",
+        tool_call_id="term-1",
+    )
+
+    await module.call_tools(
+        {
+            "messages": [
+                candidate_result,
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "search_law_terms_in_document",
+                            "args": {"query": "x", "doc_id": [173920, 170620]},
+                            "id": "verify-1",
+                        }
+                    ],
+                ),
+            ]
+        },
+        {},
+    )
+
+    tool_node_call.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_call_tools_rejects_list_containing_unknown_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool_node_call = AsyncMock()
+    monkeypatch.setattr(module.tool_node, "ainvoke", tool_node_call)
+    candidate_result = ToolMessage(
+        content=json.dumps([{"doc_info": {"id": "173920"}}]),
+        name="search_legal_documents",
+        tool_call_id="es-1",
+    )
+
+    result = await module.call_tools(
+        {
+            "messages": [
+                candidate_result,
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "search_law_terms_in_document",
+                            "args": {"query": "x", "doc_id": [173920, 999]},
+                            "id": "verify-1",
+                        }
+                    ],
+                ),
+            ]
+        },
+        {},
+    )
+
+    tool_node_call.assert_not_awaited()
+    assert result["messages"][0].status == "error"
+    assert "mọi doc_id phải xuất hiện" in result["messages"][0].content
 
 
 def test_normalize_final_response_flattens_gemini_text_blocks() -> None:

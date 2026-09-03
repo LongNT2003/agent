@@ -8,6 +8,12 @@
 - Exception: brand-new files may start with a short, genuinely useful module/file-level docstring. This does not license verbose inline comments throughout the rest of the file.
 - When editing an existing file, match its existing comment density and style rather than introducing a heavier style than what's already there.
 
+## Tests for routine code changes
+
+- Do not create or modify test files by default when implementing a code change.
+- Only add or update tests when the user explicitly requests test changes.
+- Existing relevant tests may still be run to verify the implementation. Report failures that are unrelated to the requested change instead of editing tests to make them pass.
+
 ## Maintainer scaffolding vs. template content
 
 This repo is a GitHub template. `.github/workflows/template-cleanup.yml` strips

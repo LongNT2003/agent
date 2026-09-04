@@ -7,11 +7,13 @@ graph TD;
 	__start__([<p>__start__</p>]):::first
 	model(model)
 	tools(tools)
+	resolve_latest_law_terms(resolve_latest_law_terms)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> model;
-	model -. &nbsp;done&nbsp; .-> __end__;
+	model -. &nbsp;done&nbsp; .-> resolve_latest_law_terms;
 	model -.-> tools;
 	tools --> model;
+	resolve_latest_law_terms --> __end__;
 	classDef default fill:#f2f0ff,line-height:1.2
 	classDef first fill-opacity:0
 	classDef last fill:#bfb6fc

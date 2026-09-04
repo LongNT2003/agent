@@ -125,6 +125,13 @@ class Settings(BaseSettings):
     MILVUS_EMBEDDING_DEVICE: str = "cpu"
     MILVUS_SEARCH_NPROBE: int = 16
     LEGAL_SEARCH_MAX_LOOPS: int = Field(default=5, ge=1, le=10)
+
+    # Neo4j legal-term amendment graph
+    NEO4J_HOST: str | None = None
+    NEO4J_PORT: int | None = None
+    NEO4J_USERNAME: str | None = None
+    NEO4J_PASSWORD: SecretStr | None = None
+    NEO4J_DATABASE: str = "neo4j"
     MCP_GITHUB_SERVER_URL: str = "https://api.githubcopilot.com/mcp/"
 
     LANGCHAIN_TRACING_V2: bool = False

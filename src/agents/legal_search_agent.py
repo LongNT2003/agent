@@ -21,6 +21,7 @@ from tools import (
     search_legal_documents,
 )
 from tools.legal_filter_catalog import LEGAL_DOCUMENT_TYPES
+from tools.legal_term_updates import find_latest_terms, neo4j_term_to_search_result
 
 
 def _load_legal_statuses() -> list[str]:
@@ -350,6 +351,91 @@ async def call_tools(state: LegalSearchState, config: RunnableConfig) -> dict[st
     }
 
 
+def _selected_document_ids(state: LegalSearchState) -> set[str]:
+    """Read the documents selected by the final model response."""
+    last_message = state["messages"][-1]
+    if not isinstance(last_message, AIMessage) or not isinstance(last_message.content, str):
+        return set()
+    try:
+        response = json.loads(last_message.content)
+    except json.JSONDecodeError:
+        return set()
+    if not isinstance(response, dict) or not isinstance(response.get("documents"), list):
+        return set()
+    return {
+        str(document["id"])
+        for document in response["documents"]
+        if isinstance(document, dict) and document.get("id") is not None
+    }
+
+
+async def resolve_latest_law_terms(state: LegalSearchState) -> dict[str, Any]:
+    """Enhance terms supporting the documents selected by the final model response."""
+    selected_document_ids = _selected_document_ids(state)
+    if not selected_document_ids:
+        return {}
+    target_messages = [
+        message
+        for message in state["messages"][:-1]
+        if message.name in {"search_law_terms", "search_law_terms_in_document"}
+    ]
+    parsed_messages = [
+        (message, _tool_message_payload(message)) for message in target_messages
+    ]
+    term_ids = list(
+        dict.fromkeys(
+            str(item["term_id"])
+            for _, payload in parsed_messages
+            if isinstance(payload, list)
+            for item in payload
+            if (
+                isinstance(item, dict)
+                and item.get("term_id") is not None
+                and item.get("doc_id") is not None
+                and str(item["doc_id"]) in selected_document_ids
+            )
+        )
+    )
+    if not term_ids:
+        return {}
+
+    latest_terms = await find_latest_terms(term_ids)
+    if not latest_terms:
+        return {}
+    messages: list[ToolMessage] = []
+    for message, payload in parsed_messages:
+        if not isinstance(payload, list):
+            continue
+        known_term_ids = {
+            str(item.get("term_id"))
+            for item in payload
+            if isinstance(item, dict) and item.get("term_id") is not None
+        }
+        selected_term_ids = {
+            str(item["term_id"])
+            for item in payload
+            if (
+                isinstance(item, dict)
+                and item.get("term_id") is not None
+                and item.get("doc_id") is not None
+                and str(item["doc_id"]) in selected_document_ids
+            )
+        }
+        merged = [*payload]
+        for term in latest_terms:
+            if str(term.get("_source_term_id")) not in selected_term_ids:
+                continue
+            addition = neo4j_term_to_search_result(term)
+            term_id = addition.get("term_id")
+            if term_id is not None and str(term_id) not in known_term_ids:
+                merged.append(addition)
+                known_term_ids.add(str(term_id))
+        messages.append(
+            message.model_copy(update={"content": json.dumps(merged, ensure_ascii=False)})
+        )
+    return {"messages": messages} if messages else {}
+
+
 def route_after_model(state: LegalSearchState) -> Literal["tools", "done"]:
     last_message = state["messages"][-1]
     if not isinstance(last_message, AIMessage):
@@ -360,8 +446,14 @@ def route_after_model(state: LegalSearchState) -> Literal["tools", "done"]:
 builder = StateGraph(LegalSearchState)
 builder.add_node("model", call_model)
 builder.add_node("tools", call_tools)
+builder.add_node("resolve_latest_law_terms", resolve_latest_law_terms)
 builder.set_entry_point("model")
 builder.add_edge("tools", "model")
-builder.add_conditional_edges("model", route_after_model, {"tools": "tools", "done": END})
+builder.add_edge("resolve_latest_law_terms", END)
+builder.add_conditional_edges(
+    "model",
+    route_after_model,
+    {"tools": "tools", "done": "resolve_latest_law_terms"},
+)
 
 legal_search_agent = builder.compile()

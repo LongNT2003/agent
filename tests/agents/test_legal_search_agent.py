@@ -215,6 +215,72 @@ async def test_call_tools_accepts_multiple_candidates_from_previous_results(
 
 
 @pytest.mark.asyncio
+async def test_resolve_latest_law_terms_appends_neo4j_updates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def latest_terms(term_ids: list[str]) -> list[dict[str, object]]:
+        assert term_ids == ["12083765"]
+        return [
+            {
+                "ID": 12090000,
+                "noi_dung": "Nội dung điều khoản mới.",
+                "_source_term_id": "12083765",
+            }
+        ]
+
+    monkeypatch.setattr(module, "find_latest_terms", latest_terms)
+    result = await module.resolve_latest_law_terms(
+        {
+            "messages": [
+                HumanMessage(content="question"),
+                ToolMessage(
+                    content=json.dumps([{ "term_id": 12083765, "doc_id": 12072986 }]),
+                    name="search_law_terms",
+                    tool_call_id="term-1",
+                ),
+                AIMessage(
+                    content=json.dumps(
+                        {"documents": [{"id": "12072986"}], "reasoning": "matched"}
+                    )
+                ),
+            ]
+        }
+    )
+
+    payload = json.loads(result["messages"][0].content)
+    assert [item["term_id"] for item in payload] == [12083765, 12090000]
+    assert payload[1]["update_source"] == "neo4j"
+
+
+@pytest.mark.asyncio
+async def test_resolve_latest_law_terms_only_uses_documents_selected_by_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    latest_terms = AsyncMock(return_value=[])
+    monkeypatch.setattr(module, "find_latest_terms", latest_terms)
+
+    await module.resolve_latest_law_terms(
+        {
+            "messages": [
+                ToolMessage(
+                    content=json.dumps(
+                        [
+                            {"term_id": 1, "doc_id": 100},
+                            {"term_id": 2, "doc_id": 200},
+                        ]
+                    ),
+                    name="search_law_terms_in_document",
+                    tool_call_id="verify-1",
+                ),
+                AIMessage(content=json.dumps({"documents": [{"id": "200"}]})),
+            ]
+        }
+    )
+
+    latest_terms.assert_awaited_once_with(["2"])
+
+
+@pytest.mark.asyncio
 async def test_call_tools_rejects_list_containing_unknown_candidate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

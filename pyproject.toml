@@ -42,6 +42,7 @@ dependencies = [
     "langsmith ~=0.10.2",
     "numexpr ~=2.14.1",
     "numpy ~=2.5.0",
+    "neo4j ~=6.1.0",
     "onnxruntime ~= 1.27.0",
     "pandas ~=3.0.3",
     "psycopg[binary,pool] ~=3.3.4",

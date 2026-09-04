@@ -7,7 +7,6 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 import tools as _legal_tools  # noqa: E402,F401
@@ -15,7 +14,6 @@ import tools as _legal_tools  # noqa: E402,F401
 sys.path.insert(0, str(ROOT / "src" / "agents"))
 
 from legal_search_agent import legal_search_agent  # noqa: E402
-
 
 PNG_PATH = ROOT / "legal_search_agent_graph.png"
 MERMAID_PATH = ROOT / "legal_search_agent_graph.mmd"
@@ -70,7 +68,7 @@ def main() -> None:
     graph = legal_search_agent.get_graph()
     MERMAID_PATH.write_text(graph.draw_mermaid(), encoding="utf-8")
 
-    image = Image.new("RGB", (1400, 900), "#f8fafc")
+    image = Image.new("RGB", (1600, 960), "#f8fafc")
     draw = ImageDraw.Draw(image)
 
     title_font = font(42, bold=True)
@@ -88,39 +86,47 @@ def main() -> None:
     )
 
     start = (90, 360, 270, 440)
-    model = (410, 285, 790, 515)
-    tools = (960, 285, 1330, 515)
-    end = (610, 700, 790, 780)
+    model = (390, 270, 770, 500)
+    tools = (930, 240, 1270, 450)
+    resolver = (930, 560, 1450, 770)
+    end = (550, 720, 730, 800)
 
     draw.rounded_rectangle(start, radius=40, fill="#e0f2fe", outline="#0284c7", width=4)
     draw.rounded_rectangle(model, radius=28, fill="#ede9fe", outline="#7c3aed", width=4)
     draw.rounded_rectangle(tools, radius=28, fill="#dcfce7", outline="#16a34a", width=4)
+    draw.rounded_rectangle(resolver, radius=28, fill="#fef3c7", outline="#d97706", width=4)
     draw.rounded_rectangle(end, radius=40, fill="#fee2e2", outline="#dc2626", width=4)
 
     centered_text(draw, start, "START", node_font, "#075985")
-    centered_text(draw, (410, 310, 790, 375), "model", node_font, "#5b21b6")
-    centered_text(draw, (960, 310, 1330, 375), "tools", node_font, "#166534")
+    centered_text(draw, (390, 295, 770, 360), "model", node_font, "#5b21b6")
+    centered_text(draw, (930, 260, 1270, 325), "tools", node_font, "#166534")
+    centered_text(draw, (955, 580, 1425, 645), "resolve_latest_law_terms", node_font, "#92400e")
     centered_text(draw, end, "END", node_font, "#991b1b")
 
-    centered_text(draw, (445, 385, 755, 425), "call_model", detail_font, "#475569")
-    centered_text(draw, (445, 427, 755, 475), "Gemini + tool decision", detail_font, "#475569")
-    centered_text(draw, (985, 380, 1305, 420), "call_tools", detail_font, "#475569")
-    centered_text(draw, (985, 422, 1305, 470), "validate IDs · search · count loop", detail_font, "#475569")
+    centered_text(draw, (425, 370, 735, 410), "call_model", detail_font, "#475569")
+    centered_text(draw, (425, 412, 735, 460), "Gemini + tool decision", detail_font, "#475569")
+    centered_text(draw, (955, 335, 1245, 375), "call_tools", detail_font, "#475569")
+    centered_text(draw, (945, 377, 1255, 425), "validate IDs · search · count loop", detail_font, "#475569")
+    centered_text(draw, (970, 660, 1410, 700), "Neo4j: find terminal amendments", detail_font, "#475569")
+    centered_text(draw, (970, 702, 1410, 750), "append newer terms to tool results", detail_font, "#475569")
 
-    arrow(draw, [(270, 400), (410, 400)])
-    arrow(draw, [(790, 355), (960, 355)])
-    centered_text(draw, (805, 305, 945, 345), "tool_calls", label_font, "#166534")
+    arrow(draw, [(270, 400), (390, 400)])
+    arrow(draw, [(770, 340), (930, 340)])
+    centered_text(draw, (785, 290, 915, 330), "tool_calls", label_font, "#166534")
 
-    arrow(draw, [(1145, 515), (1145, 600), (600, 600), (600, 515)])
-    centered_text(draw, (790, 607, 1040, 648), "results → next loop", label_font, "#475569")
+    arrow(draw, [(930, 410), (770, 410)])
+    centered_text(draw, (790, 420, 915, 460), "results", label_font, "#166534")
 
-    arrow(draw, [(700, 515), (700, 700)])
-    centered_text(draw, (710, 590, 845, 630), "done", label_font, "#991b1b")
+    arrow(draw, [(700, 500), (700, 560), (930, 560)])
+    centered_text(draw, (720, 512, 900, 552), "done", label_font, "#92400e")
 
-    draw.rounded_rectangle((70, 825, 1330, 865), radius=18, fill="#e2e8f0")
+    arrow(draw, [(930, 665), (830, 665), (830, 760), (730, 760)])
+    centered_text(draw, (735, 690, 920, 730), "enhanced result", label_font, "#991b1b")
+
+    draw.rounded_rectangle((70, 880, 1530, 920), radius=18, fill="#e2e8f0")
     centered_text(
         draw,
-        (70, 825, 1330, 865),
+        (70, 880, 1530, 920),
         "At LEGAL_SEARCH_MAX_LOOPS, model tools are disabled and the agent must conclude.",
         detail_font,
         "#334155",

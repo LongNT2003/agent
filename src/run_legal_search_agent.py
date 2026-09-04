@@ -4,13 +4,39 @@ import argparse
 import asyncio
 import importlib.util
 import json
+import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from core import settings
+
+logger = logging.getLogger("legal_search_agent_runner")
+
+
+def configure_file_logging() -> Path:
+    log_dir = Path(__file__).resolve().parents[1] / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    log_path = log_dir / f"legal_search_agent_{timestamp}.log"
+
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s.%(msecs)03d | %(levelname)-8s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+    root_logger.addHandler(handler)
+    logging.captureWarnings(True)
+    logger.debug("Bắt đầu legal search runner. log_file=%s", log_path)
+    return log_path
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,18 +99,26 @@ def parse_tool_output(content: Any) -> Any:
         return text
 
 
-def print_tool_results(message: ToolMessage, loop: int) -> None:
+def emit_debug(text: str, show_debug: bool) -> None:
+    logger.debug("%s", text)
+    if show_debug:
+        print(text)
+
+
+def print_tool_results(message: ToolMessage, loop: int, show_debug: bool) -> None:
     payload = parse_tool_output(message.content)
     tool_name = message.name or "unknown_tool"
     if not isinstance(payload, list):
-        print(f"[loop {loop}] {tool_name} result:")
-        print(compact_text(payload, limit=1000))
+        emit_debug(
+            f"[loop {loop}] {tool_name} result:\n{compact_text(payload, limit=1000)}",
+            show_debug,
+        )
         return
 
-    print(f"[loop {loop}] {tool_name} trả {len(payload)} kết quả:")
+    lines = [f"[loop {loop}] {tool_name} trả {len(payload)} kết quả:"]
     for rank, item in enumerate(payload, start=1):
         if not isinstance(item, dict):
-            print(f"  {rank}. {compact_text(item)}")
+            lines.append(f"  {rank}. {compact_text(item)}")
             continue
         doc_info = item.get("doc_info") or {}
         document_id = (
@@ -99,16 +133,25 @@ def print_tool_results(message: ToolMessage, loop: int) -> None:
             or item.get("embed_content")
         )
         score_text = f", score={score}" if score is not None else ""
-        print(f"  {rank}. id={document_id}{score_text} | {compact_text(title)}")
+        lines.append(f"  {rank}. id={document_id}{score_text} | {compact_text(title)}")
+    emit_debug("\n".join(lines), show_debug)
 
 
-def print_tool_calls(message: AIMessage, loop: int) -> None:
+def print_tool_calls(message: AIMessage, loop: int, show_debug: bool) -> None:
     for call in message.tool_calls:
-        print(f"[loop {loop}] gọi {call['name']}")
-        print(json.dumps(call.get("args", {}), ensure_ascii=False, indent=2))
+        emit_debug(
+            f"[loop {loop}] gọi {call['name']}\n"
+            + json.dumps(call.get("args", {}), ensure_ascii=False, indent=2),
+            show_debug,
+        )
 
 
-async def run_query_with_debug(agent: Any, query: str, config: dict[str, Any]) -> str:
+async def run_query_with_debug(
+    agent: Any,
+    query: str,
+    config: dict[str, Any],
+    show_debug: bool = False,
+) -> str:
     loop = 0
     final_message: AIMessage | None = None
     async for update in agent.astream(
@@ -124,35 +167,29 @@ async def run_query_with_debug(agent: Any, query: str, config: dict[str, Any]) -
                 continue
             if message.tool_calls:
                 if loop:
-                    print(f"[decision] Tiếp tục search loop {loop + 1}.")
+                    emit_debug(f"[decision] Tiếp tục search loop {loop + 1}.", show_debug)
                 loop += 1
-                print_tool_calls(message, loop)
+                print_tool_calls(message, loop, show_debug)
             else:
                 final_message = message
-                print("[decision] Dừng search và trả văn bản đích.")
+                emit_debug("[decision] Dừng search và trả văn bản đích.", show_debug)
 
         tools_update = update.get("tools") or {}
         for message in tools_update.get("messages", []):
             if isinstance(message, ToolMessage):
-                print_tool_results(message, loop)
+                print_tool_results(message, loop, show_debug)
 
     if final_message is None:
         raise RuntimeError("Agent không trả về final message.")
-    return format_output(final_message.content)
+    output = format_output(final_message.content)
+    logger.info("Final result:\n%s", output)
+    return output
 
 
 async def run_query(agent: Any, query: str, debug: bool = False) -> str:
+    logger.info("Query: %s", query)
     config = {"recursion_limit": settings.LEGAL_SEARCH_MAX_LOOPS * 2 + 4}
-    if debug:
-        return await run_query_with_debug(agent, query, config)
-    result = await agent.ainvoke(
-        {"messages": [HumanMessage(content=query)]},
-        config,
-    )
-    messages = result.get("messages", [])
-    if not messages:
-        raise RuntimeError("Agent không trả về message nào.")
-    return format_output(messages[-1].content)
+    return await run_query_with_debug(agent, query, config, show_debug=debug)
 
 
 async def run_session(agent: Any, debug: bool = False) -> None:
@@ -170,11 +207,20 @@ async def run_session(agent: Any, debug: bool = False) -> None:
         try:
             print(await run_query(agent, query, debug=debug))
         except Exception as exc:
+            logger.exception("Query thất bại: %s", query)
             print(f"Lỗi: {exc}", file=sys.stderr)
 
 
 async def main() -> None:
     args = parse_args()
+    log_path = configure_file_logging()
+    print(f"Log: {log_path}")
+    logger.debug(
+        "Arguments: query=%r session=%s console_debug=%s",
+        args.query,
+        args.session,
+        args.debug,
+    )
     agent = load_legal_search_agent()
     if args.query is not None:
         print(await run_query(agent, args.query, debug=args.debug))
@@ -187,4 +233,8 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding="utf-8")
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8")
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception:
+        logger.exception("Legal search runner kết thúc do lỗi.")
+        raise
